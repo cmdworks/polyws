@@ -1,5 +1,7 @@
 use std::fs;
 use std::path::Path;
+use std::sync::mpsc::{self, Receiver, TryRecvError};
+use std::thread;
 use std::time::{Duration, Instant};
 
 use ratatui::widgets::TableState;
@@ -29,6 +31,14 @@ pub(super) struct App {
     pub(super) confirm_delete: bool,
     pub(super) confirm_delete_name: Option<String>,
     pub(super) confirm_delete_path: Option<String>,
+    pub(super) task_running: bool,
+    pub(super) task_label: Option<String>,
+    task_rx: Option<Receiver<TaskMsg>>,
+}
+
+enum TaskMsg {
+    Log(String),
+    Done { ok: bool, msg: String },
 }
 
 impl App {
@@ -63,6 +73,35 @@ impl App {
             confirm_delete: false,
             confirm_delete_name: None,
             confirm_delete_path: None,
+            task_running: false,
+            task_label: None,
+            task_rx: None,
+        }
+    }
+
+    pub(super) fn tick(&mut self) {
+        if let Some(rx) = &self.task_rx {
+            loop {
+                match rx.try_recv() {
+                    Ok(TaskMsg::Log(line)) => self.log_lines.push(line),
+                    Ok(TaskMsg::Done { ok, msg }) => {
+                        self.task_running = false;
+                        self.task_label = None;
+                        self.task_rx = None;
+                        self.refresh_statuses();
+                        self.set_status(msg, !ok);
+                        break;
+                    }
+                    Err(TryRecvError::Empty) => break,
+                    Err(TryRecvError::Disconnected) => {
+                        self.task_running = false;
+                        self.task_label = None;
+                        self.task_rx = None;
+                        self.set_status("Background task ended".to_string(), false);
+                        break;
+                    }
+                }
+            }
         }
     }
 
@@ -117,28 +156,17 @@ impl App {
     }
 
     pub(super) fn pull_selected(&mut self) {
+        if self.task_running {
+            self.set_status("Another task is already running".to_string(), true);
+            return;
+        }
         if let Some(p) = self.selected_project() {
-            let name = p.name.clone();
-            let url = p.url.clone();
-            let branch = p.branch.clone();
-            let local_dir = p.local_dir().to_string();
-            let path = Path::new(&local_dir);
-            let res = if path.exists() {
-                if git::is_repo(path) {
-                    git::pull_repo(path, &branch, false)
-                } else if is_dir_empty(path) {
-                    git::clone_repo(&url, path)
-                } else {
-                    git::init_repo_in_dir(&url, &branch, path)
-                }
-            } else {
-                git::clone_repo(&url, path)
-            };
-            match res {
-                Ok(_) => self.set_status(format!("✔ {} synced", name), false),
-                Err(e) => self.set_status(format!("✘ {}: {}", name, e), true),
-            }
-            self.refresh_statuses();
+            let project = p.clone();
+            self.start_pull_task(
+                "pull-selected".to_string(),
+                project.name.clone(),
+                move || vec![project],
+            );
         }
     }
 
@@ -231,6 +259,58 @@ impl App {
         self.confirm_delete = false;
         self.confirm_delete_name = None;
         self.confirm_delete_path = None;
+    }
+
+    fn start_pull_task<F>(&mut self, label: String, display: String, projects_fn: F)
+    where
+        F: FnOnce() -> Vec<Project> + Send + 'static,
+    {
+        self.log_lines.clear();
+        self.tab = Tab::Logs;
+        self.task_running = true;
+        self.task_label = Some(label.clone());
+
+        let (tx, rx) = mpsc::channel();
+        self.task_rx = Some(rx);
+        self.set_status(format!("{} started — see Logs tab", label), false);
+
+        thread::spawn(move || {
+            let projects = projects_fn();
+            let _ = tx.send(TaskMsg::Log(format!("-- {} --", display)));
+            let mut any_failed = false;
+
+            for p in projects {
+                let path = Path::new(p.local_dir());
+                let res = if path.exists() {
+                    if git::is_repo(path) {
+                        git::pull_repo(path, &p.branch, false)
+                    } else if is_dir_empty(path) {
+                        git::clone_repo(&p.url, path)
+                    } else {
+                        git::init_repo_in_dir(&p.url, &p.branch, path)
+                    }
+                } else {
+                    git::clone_repo(&p.url, path)
+                };
+
+                match res {
+                    Ok(_) => {
+                        let _ = tx.send(TaskMsg::Log(format!("✔ {}", p.name)));
+                    }
+                    Err(e) => {
+                        any_failed = true;
+                        let _ = tx.send(TaskMsg::Log(format!("✘ {}: {}", p.name, e)));
+                    }
+                }
+            }
+
+            let msg = if any_failed {
+                format!("{} finished with errors", label)
+            } else {
+                format!("{} complete", label)
+            };
+            let _ = tx.send(TaskMsg::Done { ok: !any_failed, msg });
+        });
     }
 
     pub(super) fn submit_add_form(&mut self) {
@@ -327,29 +407,26 @@ impl App {
     }
 
     pub(super) fn pull_all(&mut self) {
-        self.log_lines.clear();
-        if let Some(cfg) = self.config.clone() {
-            for p in &cfg.projects {
-                let path = Path::new(p.local_dir());
-                let res = if path.exists() {
-                    if git::is_repo(path) {
-                        git::pull_repo(path, &p.branch, false)
-                    } else if is_dir_empty(path) {
-                        git::clone_repo(&p.url, path)
-                    } else {
-                        git::init_repo_in_dir(&p.url, &p.branch, path)
-                    }
-                } else {
-                    git::clone_repo(&p.url, path)
-                };
-                match res {
-                    Ok(_) => self.log_lines.push(format!("✔ {}", p.name)),
-                    Err(e) => self.log_lines.push(format!("✘ {}: {}", p.name, e)),
-                }
-            }
-            self.refresh_statuses();
-            self.set_status("Pull all complete".to_string(), false);
+        if self.task_running {
+            self.set_status("Another task is already running".to_string(), true);
+            return;
         }
+        let cfg = match self.config.clone() {
+            Some(cfg) => cfg,
+            None => {
+                self.set_status("No workspace loaded".to_string(), true);
+                return;
+            }
+        };
+        self.start_pull_task(
+            "pull-all".to_string(),
+            cfg.name.clone(),
+            move || {
+                cfg.execution_levels()
+                    .map(|levels| levels.into_iter().flatten().cloned().collect())
+                    .unwrap_or_default()
+            },
+        );
     }
 
     pub(super) fn create_snapshot(&mut self) {

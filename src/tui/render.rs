@@ -211,6 +211,15 @@ pub(super) fn draw(f: &mut Frame, app: &mut App) {
             Style::default().fg(Color::Green)
         };
         (format!(" {}", msg), style)
+    } else if app.task_running {
+        let label = app
+            .task_label
+            .as_deref()
+            .unwrap_or("background task");
+        (
+            format!(" Running: {} — see Logs tab", label),
+            Style::default().fg(Color::Yellow),
+        )
     } else {
         (hint.to_string(), Style::default().fg(Color::DarkGray))
     };

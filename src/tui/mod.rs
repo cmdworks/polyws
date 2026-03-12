@@ -44,6 +44,7 @@ pub fn run() -> Result<()> {
     let tick = Duration::from_millis(500);
     loop {
         terminal.draw(|f| draw(f, &mut app))?;
+        app.tick();
 
         if event::poll(tick)? {
             if let Event::Key(key) = event::read()? {

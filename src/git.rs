@@ -215,6 +215,45 @@ pub fn pull_repo(path: &Path, branch: &str, force: bool) -> Result<()> {
     Ok(())
 }
 
+/// Returns true if the repo has uncommitted changes.
+pub fn has_uncommitted_changes(path: &Path) -> Result<bool> {
+    is_worktree_dirty(path)
+}
+
+/// Stage all changes and commit with the given message.
+pub fn commit_all(path: &Path, message: &str) -> Result<()> {
+    let add = Command::new("git")
+        .args(["add", "-A"])
+        .current_dir(path)
+        .output()
+        .context("Failed to run git add -A")?;
+    if !add.status.success() {
+        anyhow::bail!(
+            "git add failed in {}: {}",
+            path.display(),
+            summarize_git_failure(&add)
+        );
+    }
+
+    if !is_worktree_dirty(path)? {
+        anyhow::bail!("no changes to commit");
+    }
+
+    let commit = Command::new("git")
+        .args(["commit", "-m", message])
+        .current_dir(path)
+        .output()
+        .context("Failed to run git commit")?;
+    if !commit.status.success() {
+        anyhow::bail!(
+            "git commit failed in {}: {}",
+            path.display(),
+            summarize_git_failure(&commit)
+        );
+    }
+    Ok(())
+}
+
 /// Push the local branch to origin for the repo at `path`.
 pub fn push_repo(path: &Path, branch: &str) -> Result<()> {
     let output = Command::new("git")

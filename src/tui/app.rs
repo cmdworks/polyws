@@ -26,6 +26,8 @@ pub(super) struct App {
     pub(super) add_form: AddForm,
     pub(super) show_exec_prompt: bool,
     pub(super) exec_input: String,
+    pub(super) show_commit_prompt: bool,
+    pub(super) commit_input: String,
     pub(super) status_msg: Option<(String, bool)>, // (msg, is_error)
     pub(super) last_tick: Instant,
     pub(super) confirm_delete: bool,
@@ -34,11 +36,17 @@ pub(super) struct App {
     pub(super) task_running: bool,
     pub(super) task_label: Option<String>,
     task_rx: Option<Receiver<TaskMsg>>,
+    pending_push: Option<PushScope>,
 }
 
 enum TaskMsg {
     Log(String),
     Done { ok: bool, msg: String },
+}
+
+enum PushScope {
+    All,
+    Selected(Project),
 }
 
 impl App {
@@ -68,6 +76,8 @@ impl App {
             add_form: AddForm::default(),
             show_exec_prompt: false,
             exec_input: String::new(),
+            show_commit_prompt: false,
+            commit_input: String::new(),
             status_msg: None,
             last_tick: Instant::now(),
             confirm_delete: false,
@@ -76,6 +86,7 @@ impl App {
             task_running: false,
             task_label: None,
             task_rx: None,
+            pending_push: None,
         }
     }
 
@@ -156,6 +167,10 @@ impl App {
     }
 
     pub(super) fn pull_selected(&mut self) {
+        self.pull_selected_with_force(false);
+    }
+
+    pub(super) fn pull_selected_with_force(&mut self, force: bool) {
         if self.task_running {
             self.set_status("Another task is already running".to_string(), true);
             return;
@@ -163,9 +178,10 @@ impl App {
         if let Some(p) = self.selected_project() {
             let project = p.clone();
             self.start_pull_task(
-                "pull-selected".to_string(),
+                if force { "pull-selected --force".to_string() } else { "pull-selected".to_string() },
                 project.name.clone(),
                 move || vec![project],
+                force,
             );
         }
     }
@@ -261,7 +277,7 @@ impl App {
         self.confirm_delete_path = None;
     }
 
-    fn start_pull_task<F>(&mut self, label: String, display: String, projects_fn: F)
+    fn start_pull_task<F>(&mut self, label: String, display: String, projects_fn: F, force: bool)
     where
         F: FnOnce() -> Vec<Project> + Send + 'static,
     {
@@ -283,7 +299,7 @@ impl App {
                 let path = Path::new(p.local_dir());
                 let res = if path.exists() {
                     if git::is_repo(path) {
-                        git::pull_repo(path, &p.branch, false)
+                        git::pull_repo(path, &p.branch, force)
                     } else if is_dir_empty(path) {
                         git::clone_repo(&p.url, path)
                     } else {
@@ -300,6 +316,115 @@ impl App {
                     Err(e) => {
                         any_failed = true;
                         let _ = tx.send(TaskMsg::Log(format!("✘ {}: {}", p.name, e)));
+                    }
+                }
+            }
+
+            let msg = if any_failed {
+                format!("{} finished with errors", label)
+            } else {
+                format!("{} complete", label)
+            };
+            let _ = tx.send(TaskMsg::Done { ok: !any_failed, msg });
+        });
+    }
+
+    fn start_push_task(&mut self, label: String, display: String, commit_msg: Option<String>) {
+        if self.task_running {
+            self.set_status("Another task is already running".to_string(), true);
+            return;
+        }
+        let cfg = match self.config.clone() {
+            Some(cfg) => cfg,
+            None => {
+                self.set_status("No workspace loaded".to_string(), true);
+                return;
+            }
+        };
+
+        self.log_lines.clear();
+        self.tab = Tab::Logs;
+        self.task_running = true;
+        self.task_label = Some(label.clone());
+
+        let (tx, rx) = mpsc::channel();
+        self.task_rx = Some(rx);
+        self.set_status(format!("{} started — see Logs tab", label), false);
+
+        thread::spawn(move || {
+            let levels = cfg.execution_levels().unwrap_or_default();
+            let _ = tx.send(TaskMsg::Log(format!("-- {} --", display)));
+            let mut any_failed = false;
+
+            for (level_idx, level) in levels.into_iter().enumerate() {
+                if level.len() > 1 {
+                    let _ = tx.send(TaskMsg::Log(format!(
+                        "level {}: {} repos",
+                        level_idx + 1,
+                        level.len()
+                    )));
+                }
+
+                for p in level {
+                    let path = Path::new(p.local_dir());
+                    if !path.exists() {
+                        any_failed = true;
+                        let _ = tx.send(TaskMsg::Log(format!(
+                            "✘ {}: missing (run pull first)",
+                            p.name
+                        )));
+                        continue;
+                    }
+                    if !git::is_repo(path) {
+                        any_failed = true;
+                        let _ = tx.send(TaskMsg::Log(format!(
+                            "✘ {}: not a git repo",
+                            p.name
+                        )));
+                        continue;
+                    }
+
+                    if let Some(msg) = commit_msg.as_deref() {
+                        match git::has_uncommitted_changes(path) {
+                            Ok(true) => {
+                                if let Err(e) = git::commit_all(path, msg) {
+                                    any_failed = true;
+                                    let _ = tx.send(TaskMsg::Log(format!(
+                                        "✘ {}: commit failed: {}",
+                                        p.name, e
+                                    )));
+                                    continue;
+                                } else {
+                                    let _ =
+                                        tx.send(TaskMsg::Log(format!("● {}: committed", p.name)));
+                                }
+                            }
+                            Ok(false) => {}
+                            Err(e) => {
+                                any_failed = true;
+                                let _ = tx.send(TaskMsg::Log(format!(
+                                    "✘ {}: {}", p.name, e
+                                )));
+                                continue;
+                            }
+                        }
+                    } else if let Ok(true) = git::has_uncommitted_changes(path) {
+                        any_failed = true;
+                        let _ = tx.send(TaskMsg::Log(format!(
+                            "✘ {}: has uncommitted changes (commit required)",
+                            p.name
+                        )));
+                        continue;
+                    }
+
+                    match git::push_repo(path, &p.branch) {
+                        Ok(_) => {
+                            let _ = tx.send(TaskMsg::Log(format!("✔ {} pushed", p.name)));
+                        }
+                        Err(e) => {
+                            any_failed = true;
+                            let _ = tx.send(TaskMsg::Log(format!("✘ {}: {}", p.name, e)));
+                        }
                     }
                 }
             }
@@ -426,7 +551,116 @@ impl App {
                     .map(|levels| levels.into_iter().flatten().cloned().collect())
                     .unwrap_or_default()
             },
+            false,
         );
+    }
+
+    pub(super) fn request_push_all(&mut self) {
+        if self.task_running {
+            self.set_status("Another task is already running".to_string(), true);
+            return;
+        }
+        let cfg = match self.config.clone() {
+            Some(cfg) => cfg,
+            None => {
+                self.set_status("No workspace loaded".to_string(), true);
+                return;
+            }
+        };
+
+        let mut any_dirty = false;
+        for p in &cfg.projects {
+            let path = Path::new(p.local_dir());
+            if !path.exists() || !git::is_repo(path) {
+                continue;
+            }
+            match git::has_uncommitted_changes(path) {
+                Ok(true) => {
+                    any_dirty = true;
+                    break;
+                }
+                Ok(false) => {}
+                Err(e) => {
+                    self.set_status(format!("{}: {}", p.name, e), true);
+                    return;
+                }
+            }
+        }
+
+        if any_dirty {
+            self.show_commit_prompt = true;
+            self.commit_input.clear();
+            self.pending_push = Some(PushScope::All);
+        } else {
+            self.start_push_task("push-all".to_string(), cfg.name.clone(), None);
+        }
+    }
+
+    pub(super) fn request_push_selected(&mut self) {
+        if self.task_running {
+            self.set_status("Another task is already running".to_string(), true);
+            return;
+        }
+        let p = match self.selected_project() {
+            Some(p) => p.clone(),
+            None => return,
+        };
+        let path = Path::new(p.local_dir());
+        if !path.exists() {
+            self.set_status(
+                format!("'{}' not found — run pull first", p.local_dir()),
+                true,
+            );
+            return;
+        }
+        if !git::is_repo(path) {
+            self.set_status(format!("'{}' is not a git repo", p.local_dir()), true);
+            return;
+        }
+        match git::has_uncommitted_changes(path) {
+            Ok(true) => {
+                self.show_commit_prompt = true;
+                self.commit_input.clear();
+                self.pending_push = Some(PushScope::Selected(p));
+            }
+            Ok(false) => {
+                self.start_push_task("push-selected".to_string(), p.name.clone(), None);
+            }
+            Err(e) => self.set_status(format!("{}: {}", p.name, e), true),
+        }
+    }
+
+    pub(super) fn cancel_commit_prompt(&mut self) {
+        self.show_commit_prompt = false;
+        self.commit_input.clear();
+        self.pending_push = None;
+        self.set_status("Push cancelled".to_string(), false);
+    }
+
+    pub(super) fn confirm_commit_prompt(&mut self) {
+        let msg = self.commit_input.trim().to_string();
+        if msg.is_empty() {
+            self.set_status("Commit message required".to_string(), true);
+            return;
+        }
+        let scope = self.pending_push.take();
+        self.show_commit_prompt = false;
+        self.commit_input.clear();
+        match scope {
+            Some(PushScope::All) => {
+                if let Some(cfg) = self.config.clone() {
+                    self.start_push_task("push-all".to_string(), cfg.name.clone(), Some(msg));
+                } else {
+                    self.set_status("No workspace loaded".to_string(), true);
+                }
+            }
+            Some(PushScope::Selected(p)) => {
+                self.start_push_task("push-selected".to_string(), p.name.clone(), Some(msg));
+            }
+            None => {
+                self.set_status("No push action pending".to_string(), true);
+            }
+        }
     }
 
     pub(super) fn create_snapshot(&mut self) {

@@ -161,16 +161,16 @@ pub(super) fn draw(f: &mut Frame, app: &mut App) {
         match app.tab {
             Tab::Dashboard => {
                 if compact_hints {
-                    "a:Add p:Pull s:Snap d:Doc r:Reload Tab q"
+                    "a:Add p:Pull u:Push s:Snap d:Doc r Tab q"
                 } else {
-                    "a:Add p:Pull-all s:Snapshot d:Doctor r:Reload Tab:Switch q:Quit"
+                    "a:Add p:Pull-all u:Push-all s:Snapshot d:Doctor r:Reload Tab:Switch q:Quit"
                 }
             }
             Tab::Projects => {
                 if compact_hints {
-                    "a:Add d:Del x:Wipe p/↵:Pull e:Exec s:Ref ↑↓ q"
+                    "a:Add d:Del x:Wipe p/↵:Pull f:Force u:Push e:Exec s:Ref ↑↓ q"
                 } else {
-                    "a:Add d:Delete x:Wipe p/↵:Pull e:Exec s:Refresh ↑↓:Move q:Quit"
+                    "a:Add d:Delete x:Wipe p/↵:Pull f:Force u:Push e:Exec s:Refresh ↑↓:Move q:Quit"
                 }
             }
             Tab::Graph => {
@@ -233,6 +233,9 @@ pub(super) fn draw(f: &mut Frame, app: &mut App) {
     if app.show_exec_prompt {
         draw_exec_prompt(f, app, area);
     }
+    if app.show_commit_prompt {
+        draw_commit_prompt(f, app, area);
+    }
     if app.show_help {
         draw_help(f, area);
     }
@@ -266,6 +269,8 @@ fn draw_help(f: &mut Frame, area: Rect) {
         Line::from("   d / Del       : Delete selected"),
         Line::from("   x             : Delete local copy (confirm)"),
         Line::from("   p / Enter     : Pull selected"),
+        Line::from("   f             : Force pull selected"),
+        Line::from("   u             : Push selected"),
         Line::from("   e             : Exec command"),
         Line::from("   s             : Refresh statuses"),
         Line::from(""),
@@ -861,6 +866,21 @@ fn draw_exec_prompt(f: &mut Frame, app: &App, area: Rect) {
         .block(
             Block::default()
                 .title(" Execute command in all repos  [Enter=run  Esc=cancel] ")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Yellow)),
+        )
+        .style(Style::default().fg(Color::White));
+    f.render_widget(prompt, popup);
+}
+
+fn draw_commit_prompt(f: &mut Frame, app: &App, area: Rect) {
+    let popup = centered_rect(60, 26, area);
+    f.render_widget(Clear, popup);
+
+    let prompt = Paragraph::new(format!(" commit: {}_", app.commit_input))
+        .block(
+            Block::default()
+                .title(" Commit message required  [Enter=commit+push  Esc=cancel] ")
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::Yellow)),
         )

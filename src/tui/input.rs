@@ -99,6 +99,25 @@ fn handle_exec_prompt_overlay_key(app: &mut App, code: KeyCode) -> bool {
     true
 }
 
+fn handle_commit_prompt_overlay_key(app: &mut App, code: KeyCode) -> bool {
+    if !app.show_commit_prompt {
+        return false;
+    }
+
+    match code {
+        KeyCode::Esc => app.cancel_commit_prompt(),
+        KeyCode::Enter => app.confirm_commit_prompt(),
+        KeyCode::Backspace => {
+            app.commit_input.pop();
+        }
+        KeyCode::Char(c) => {
+            app.commit_input.push(c);
+        }
+        _ => {}
+    }
+    true
+}
+
 fn handle_global_key(app: &mut App, code: KeyCode, mods: KeyModifiers) -> bool {
     match code {
         KeyCode::Char('h') | KeyCode::Char('H') => {
@@ -149,6 +168,7 @@ fn handle_tab_key(app: &mut App, code: KeyCode) {
     match app.tab {
         Tab::Dashboard => match code {
             KeyCode::Char('p') => app.pull_all(),
+            KeyCode::Char('u') => app.request_push_all(),
             KeyCode::Char('d') => app.run_doctor(),
             KeyCode::Char('s') => app.create_snapshot(),
             _ => {}
@@ -166,6 +186,8 @@ fn handle_tab_key(app: &mut App, code: KeyCode) {
             KeyCode::Char('d') | KeyCode::Delete => app.remove_selected(),
             KeyCode::Char('x') | KeyCode::Char('X') => app.request_delete_selected(),
             KeyCode::Char('p') | KeyCode::Enter => app.pull_selected(),
+            KeyCode::Char('f') | KeyCode::Char('F') => app.pull_selected_with_force(true),
+            KeyCode::Char('u') => app.request_push_selected(),
             KeyCode::Char('e') => {
                 app.show_exec_prompt = true;
                 app.exec_input.clear();
@@ -219,6 +241,9 @@ pub(super) fn handle_key(app: &mut App, code: KeyCode, mods: KeyModifiers) -> bo
         return false;
     }
     if handle_add_form_overlay_key(app, code) {
+        return false;
+    }
+    if handle_commit_prompt_overlay_key(app, code) {
         return false;
     }
     if handle_exec_prompt_overlay_key(app, code) {

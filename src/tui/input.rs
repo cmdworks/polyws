@@ -7,6 +7,19 @@ use super::app::App;
 use super::helpers::{move_down, move_up, project_count};
 use super::types::{Tab, FIELD_LABELS};
 
+fn handle_confirm_delete(app: &mut App, code: KeyCode) -> bool {
+    if !app.confirm_delete {
+        return false;
+    }
+
+    match code {
+        KeyCode::Char('y') | KeyCode::Char('Y') => app.confirm_delete(),
+        KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => app.cancel_delete(),
+        _ => {}
+    }
+    true
+}
+
 fn close_overlay_on_escape(app: &mut App, code: KeyCode) -> bool {
     if code != KeyCode::Esc {
         return false;
@@ -151,6 +164,7 @@ fn handle_tab_key(app: &mut App, code: KeyCode) {
                 move_down(&mut app.table_state, n);
             }
             KeyCode::Char('d') | KeyCode::Delete => app.remove_selected(),
+            KeyCode::Char('x') | KeyCode::Char('X') => app.request_delete_selected(),
             KeyCode::Char('p') | KeyCode::Enter => app.pull_selected(),
             KeyCode::Char('e') => {
                 app.show_exec_prompt = true;
@@ -198,6 +212,9 @@ fn handle_tab_key(app: &mut App, code: KeyCode) {
 
 /// Returns true when the app should quit.
 pub(super) fn handle_key(app: &mut App, code: KeyCode, mods: KeyModifiers) -> bool {
+    if handle_confirm_delete(app, code) {
+        return false;
+    }
     if close_overlay_on_escape(app, code) {
         return false;
     }

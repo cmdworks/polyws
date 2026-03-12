@@ -2,9 +2,10 @@ use anyhow::{Context, Result};
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::path::Path;
+use std::fs;
 use std::process::Command;
 
-use crate::config::{find_existing_config_path, Project, WorkspaceConfig};
+use crate::config::{find_existing_config_path, normalize_local_dir, Project, WorkspaceConfig};
 use crate::git;
 use crate::utils;
 
@@ -90,15 +91,23 @@ pub fn add(
         if Path::new(pth).is_absolute() {
             anyhow::bail!("Project path must be relative to workspace root");
         }
-        if config.projects.iter().any(|p| p.local_dir() == pth) {
+        let requested = normalize_local_dir(pth);
+        if config
+            .projects
+            .iter()
+            .any(|p| normalize_local_dir(p.local_dir()) == requested)
+        {
             anyhow::bail!("Project path '{}' is already used by another project", pth);
         }
-    } else if config
-        .projects
-        .iter()
-        .any(|p| p.local_dir() == name.as_str())
-    {
-        anyhow::bail!("Project path '{}' is already used by another project", name);
+    } else {
+        let requested = normalize_local_dir(&name);
+        if config
+            .projects
+            .iter()
+            .any(|p| normalize_local_dir(p.local_dir()) == requested)
+        {
+            anyhow::bail!("Project path '{}' is already used by another project", name);
+        }
     }
 
     if depends_on.iter().any(|dep| dep == &name) {
@@ -238,12 +247,28 @@ pub fn pull(name: Option<String>, force: bool) -> Result<()> {
 fn run_pull_for_project(project: &Project, force: bool) -> Result<PullOutcome> {
     let path = Path::new(project.local_dir());
     if path.exists() {
-        git::pull_repo(path, &project.branch, force)?;
-        Ok(PullOutcome::Updated)
-    } else {
-        git::clone_repo(&project.url, path)?;
-        Ok(PullOutcome::Cloned)
+        if git::is_repo(path) {
+            git::pull_repo(path, &project.branch, force)?;
+            return Ok(PullOutcome::Updated);
+        }
+        if is_dir_empty(path) {
+            git::clone_repo(&project.url, path)?;
+            return Ok(PullOutcome::Cloned);
+        }
+        anyhow::bail!(
+            "'{}' exists but is not a git repository",
+            project.local_dir()
+        );
     }
+
+    git::clone_repo(&project.url, path)?;
+    Ok(PullOutcome::Cloned)
+}
+
+fn is_dir_empty(path: &Path) -> bool {
+    fs::read_dir(path)
+        .map(|mut i| i.next().is_none())
+        .unwrap_or(false)
 }
 
 /// `clone` is a user-facing alias for `pull`.

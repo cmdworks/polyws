@@ -168,9 +168,9 @@ pub(super) fn draw(f: &mut Frame, app: &mut App) {
             }
             Tab::Projects => {
                 if compact_hints {
-                    "a:Add d:Del p/↵:Pull e:Exec s:Ref ↑↓:Move q"
+                    "a:Add d:Del x:Wipe p/↵:Pull e:Exec s:Ref ↑↓ q"
                 } else {
-                    "a:Add d:Delete p/↵:Pull e:Exec s:Refresh ↑↓:Move q:Quit"
+                    "a:Add d:Delete x:Wipe p/↵:Pull e:Exec s:Refresh ↑↓:Move q:Quit"
                 }
             }
             Tab::Graph => {
@@ -255,6 +255,7 @@ fn draw_help(f: &mut Frame, area: Rect) {
         )]),
         Line::from("   ↑↓ / j k      : Move selection"),
         Line::from("   d / Del       : Delete selected"),
+        Line::from("   x             : Delete local copy (confirm)"),
         Line::from("   p / Enter     : Pull selected"),
         Line::from("   e             : Exec command"),
         Line::from("   s             : Refresh statuses"),

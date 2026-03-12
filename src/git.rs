@@ -5,7 +5,6 @@ use std::process::{Command, Output};
 
 /// Clone a repository from `url` into `path`.
 pub fn clone_repo(url: &str, path: &Path) -> Result<()> {
-    println!("  Cloning {} → {}", url, path.display());
     let output = Command::new("git")
         .args(["clone", url, &path.to_string_lossy()])
         .output()

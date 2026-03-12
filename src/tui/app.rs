@@ -1,9 +1,11 @@
 use std::path::Path;
+use std::fs;
 use std::time::{Duration, Instant};
 
+use anyhow::anyhow;
 use ratatui::widgets::TableState;
 
-use crate::config::{Project, WorkspaceConfig};
+use crate::config::{normalize_local_dir, Project, WorkspaceConfig};
 use crate::{git, snapshot, sync as sync_mod};
 
 use super::helpers::list_snap_files;
@@ -25,6 +27,9 @@ pub(super) struct App {
     pub(super) exec_input: String,
     pub(super) status_msg: Option<(String, bool)>, // (msg, is_error)
     pub(super) last_tick: Instant,
+    pub(super) confirm_delete: bool,
+    pub(super) confirm_delete_name: Option<String>,
+    pub(super) confirm_delete_path: Option<String>,
 }
 
 impl App {
@@ -56,6 +61,9 @@ impl App {
             exec_input: String::new(),
             status_msg: None,
             last_tick: Instant::now(),
+            confirm_delete: false,
+            confirm_delete_name: None,
+            confirm_delete_path: None,
         }
     }
 
@@ -117,7 +125,16 @@ impl App {
             let local_dir = p.local_dir().to_string();
             let path = Path::new(&local_dir);
             let res = if path.exists() {
-                git::pull_repo(path, &branch, false)
+                if git::is_repo(path) {
+                    git::pull_repo(path, &branch, false)
+                } else if is_dir_empty(path) {
+                    git::clone_repo(&url, path)
+                } else {
+                    Err(anyhow!(
+                        "'{}' exists but is not a git repository",
+                        local_dir
+                    ))
+                }
             } else {
                 git::clone_repo(&url, path)
             };
@@ -150,6 +167,74 @@ impl App {
             self.repo_statuses = vec!["…".to_string(); len];
             self.set_status(format!("Removed '{}'", name), false);
         }
+    }
+
+    pub(super) fn request_delete_selected(&mut self) {
+        if let Some(p) = self.selected_project() {
+            let name = p.name.clone();
+            let local_dir = p.local_dir().to_string();
+            let normalized = normalize_local_dir(&local_dir);
+            if normalized == "." {
+                self.set_status(
+                    "Refusing to delete workspace root (path '.')".to_string(),
+                    true,
+                );
+                return;
+            }
+            if !Path::new(&local_dir).exists() {
+                self.set_status(
+                    format!("Local copy for '{}' not found", name),
+                    true,
+                );
+                return;
+            }
+            self.confirm_delete = true;
+            self.confirm_delete_name = Some(name.clone());
+            self.confirm_delete_path = Some(local_dir);
+            self.set_status(
+                format!("Delete local copy of '{}' ? Press y to confirm, n/Esc to cancel", name),
+                true,
+            );
+        }
+    }
+
+    pub(super) fn cancel_delete(&mut self) {
+        self.confirm_delete = false;
+        self.confirm_delete_name = None;
+        self.confirm_delete_path = None;
+        self.set_status("Delete cancelled".to_string(), false);
+    }
+
+    pub(super) fn confirm_delete(&mut self) {
+        if !self.confirm_delete {
+            return;
+        }
+        let name = match self.confirm_delete_name.clone() {
+            Some(n) => n,
+            None => {
+                self.cancel_delete();
+                return;
+            }
+        };
+        let path = match self.confirm_delete_path.clone() {
+            Some(p) => p,
+            None => {
+                self.cancel_delete();
+                return;
+            }
+        };
+
+        match fs::remove_dir_all(&path) {
+            Ok(_) => {
+                self.set_status(format!("Deleted local copy of '{}'", name), false);
+                self.refresh_statuses();
+            }
+            Err(e) => self.set_status(format!("Delete failed for '{}': {}", name, e), true),
+        }
+
+        self.confirm_delete = false;
+        self.confirm_delete_name = None;
+        self.confirm_delete_path = None;
     }
 
     pub(super) fn submit_add_form(&mut self) {
@@ -206,7 +291,12 @@ impl App {
                 );
                 return;
             }
-            if cfg.projects.iter().any(|p| p.local_dir() == requested_dir) {
+            let requested = normalize_local_dir(requested_dir);
+            if cfg
+                .projects
+                .iter()
+                .any(|p| normalize_local_dir(p.local_dir()) == requested)
+            {
                 self.set_status(
                     format!("project path '{}' is already used", requested_dir),
                     true,
@@ -246,7 +336,16 @@ impl App {
             for p in &cfg.projects {
                 let path = Path::new(p.local_dir());
                 let res = if path.exists() {
-                    git::pull_repo(path, &p.branch, false)
+                    if git::is_repo(path) {
+                        git::pull_repo(path, &p.branch, false)
+                    } else if is_dir_empty(path) {
+                        git::clone_repo(&p.url, path)
+                    } else {
+                        Err(anyhow!(
+                            "'{}' exists but is not a git repository",
+                            p.local_dir()
+                        ))
+                    }
                 } else {
                     git::clone_repo(&p.url, path)
                 };
@@ -368,4 +467,10 @@ impl App {
         self.set_status("Doctor complete".to_string(), false);
         self.tab = Tab::Logs;
     }
+}
+
+fn is_dir_empty(path: &Path) -> bool {
+    fs::read_dir(path)
+        .map(|mut i| i.next().is_none())
+        .unwrap_or(false)
 }

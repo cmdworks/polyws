@@ -28,6 +28,25 @@ impl Project {
     }
 }
 
+/// Normalize a project path for comparisons.
+/// - trims whitespace
+/// - converts backslashes to slashes
+/// - removes leading "./"
+/// - trims trailing slashes
+/// - treats empty as "."
+pub fn normalize_local_dir(path: &str) -> String {
+    let mut normalized = path.trim().replace('\\', "/");
+    while normalized.starts_with("./") {
+        normalized = normalized.trim_start_matches("./").to_string();
+    }
+    normalized = normalized.trim_end_matches('/').to_string();
+    if normalized.is_empty() {
+        ".".to_string()
+    } else {
+        normalized
+    }
+}
+
 fn default_branch() -> String {
     "main".to_string()
 }

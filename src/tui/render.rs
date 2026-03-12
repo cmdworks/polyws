@@ -765,7 +765,7 @@ fn draw_log(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_add_form(f: &mut Frame, app: &App, area: Rect) {
-    let popup_area = centered_rect(74, 84, area);
+    let popup_area = centered_rect(74, 88, area);
     f.render_widget(Clear, popup_area);
 
     let block = Block::default()
@@ -774,10 +774,20 @@ fn draw_add_form(f: &mut Frame, app: &App, area: Rect) {
         .border_style(Style::default().fg(Color::Yellow));
     f.render_widget(block, popup_area);
 
+    let margin: u16 = 2;
+    let field_count = FIELD_LABELS.len() as u16;
+    // Keep at least one visible text row per field on shorter terminals.
+    let usable_height = popup_area.height.saturating_sub(margin * 2);
+    let field_height = if usable_height >= field_count * 4 {
+        4
+    } else {
+        3
+    };
+
     let inner = Layout::default()
         .direction(Direction::Vertical)
-        .margin(2)
-        .constraints(vec![Constraint::Length(4); FIELD_LABELS.len()])
+        .margin(margin)
+        .constraints(vec![Constraint::Length(field_height); FIELD_LABELS.len()])
         .split(popup_area);
 
     for (i, label) in FIELD_LABELS.iter().enumerate() {

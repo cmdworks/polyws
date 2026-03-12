@@ -171,6 +171,8 @@ function makeNode(id, kind, parentId = null) {
     parentId,
     name: `${base}-${id.split("-").pop()}`,
     repoName: kind === "repo" ? `${base}-${id.split("-").pop()}` : "",
+    url: "",
+    syncUrl: "",
   };
 }
 
@@ -191,19 +193,22 @@ export default function GeneratorPage() {
 
   const [nodeCounter, setNodeCounter] = useState(5);
   const [plannerNodes, setPlannerNodes] = useState([
-    { id: "node-1", kind: "folder", parentId: null, name: "apps", repoName: "" },
+    { id: "node-1", kind: "folder", parentId: null, name: "apps", repoName: "", url: "", syncUrl: "" },
     {
       id: "node-2",
       kind: "repo",
       parentId: null,
       name: "project-1",
       repoName: "project-1",
+      url: "",
+      syncUrl: "",
     },
-    { id: "node-3", kind: "folder", parentId: null, name: "services", repoName: "" },
-    { id: "node-4", kind: "folder", parentId: "node-3", name: "api", repoName: "" },
+    { id: "node-3", kind: "folder", parentId: null, name: "services", repoName: "", url: "", syncUrl: "" },
+    { id: "node-4", kind: "folder", parentId: "node-3", name: "api", repoName: "", url: "", syncUrl: "" },
   ]);
 
   const [editorMode, setEditorMode] = useState("workspace");
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [selectedNodeId, setSelectedNodeId] = useState(null);
   const [nodeForm, setNodeForm] = useState({
     id: null,
@@ -211,6 +216,8 @@ export default function GeneratorPage() {
     kind: "folder",
     parentId: "",
     repoName: "",
+    url: "",
+    syncUrl: "",
   });
 
   const { config, skippedRows } = useMemo(() => {
@@ -329,6 +336,11 @@ export default function GeneratorPage() {
   const startWorkspaceEditor = () => {
     setEditorMode("workspace");
     setSelectedNodeId(null);
+    setIsEditorOpen(true);
+  };
+
+  const closeEditor = () => {
+    setIsEditorOpen(false);
   };
 
   const startNodeEditor = (nodeId) => {
@@ -343,7 +355,10 @@ export default function GeneratorPage() {
       kind: node.kind,
       parentId: node.parentId || "",
       repoName: node.repoName || "",
+      url: node.url || "",
+      syncUrl: node.syncUrl || "",
     });
+    setIsEditorOpen(true);
   };
 
   const createNode = (parentId, kind) => {
@@ -360,7 +375,10 @@ export default function GeneratorPage() {
       kind: next.kind,
       parentId: next.parentId || "",
       repoName: next.repoName,
+      url: "",
+      syncUrl: "",
     });
+    setIsEditorOpen(true);
   };
 
   const saveNode = () => {
@@ -370,6 +388,8 @@ export default function GeneratorPage() {
     if (!cleanName) return;
 
     const cleanRepoName = nodeForm.repoName.trim();
+    const cleanUrl = nodeForm.url.trim();
+    const cleanSyncUrl = nodeForm.syncUrl.trim();
 
     setPlannerNodes((prev) =>
       prev.map((node) => {
@@ -383,9 +403,12 @@ export default function GeneratorPage() {
             nodeForm.kind === "repo"
               ? cleanRepoName || cleanName
               : "",
+          url: nodeForm.kind === "repo" ? cleanUrl : "",
+          syncUrl: nodeForm.kind === "repo" ? cleanSyncUrl : "",
         };
       }),
     );
+    setIsEditorOpen(false);
   };
 
   const deleteNode = (nodeId) => {
@@ -395,6 +418,7 @@ export default function GeneratorPage() {
     if (selectedNodeId && ids.has(selectedNodeId)) {
       setSelectedNodeId(null);
       setEditorMode("workspace");
+      setIsEditorOpen(false);
     }
   };
 
@@ -454,7 +478,7 @@ export default function GeneratorPage() {
 
       return (
         <React.Fragment key={node.id}>
-          <div className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/25 px-2 py-2">
+          <div className="flex items-center justify-between gap-2 py-0.5">
             <div className="min-w-0 flex items-center gap-2">
               <span className="text-muted text-xs shrink-0">{branchPrefix}</span>
               <button
@@ -501,7 +525,7 @@ export default function GeneratorPage() {
           </div>
 
           {node.kind === "folder" ? (
-            <div className="pl-2 space-y-2">{renderTreeRows(node.id, nextPrefix)}</div>
+            <div className="pl-2">{renderTreeRows(node.id, nextPrefix)}</div>
           ) : null}
         </React.Fragment>
       );
@@ -542,69 +566,6 @@ export default function GeneratorPage() {
 
         <div className="grid grid-cols-1 xl:grid-cols-[1.2fr_1fr] gap-4">
           <section className="bg-surface/90 border border-white/15 rounded-2xl p-4 space-y-4">
-            <div>
-              <h2 className="text-primary text-xs uppercase tracking-[0.18em] mb-3">Workspace Config</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <label className="text-xs text-muted uppercase tracking-wider">
-                  Name
-                  <input
-                    className="mt-1 w-full bg-black/35 border border-white/20 rounded-lg px-3 py-2 text-sm"
-                    value={workspaceName}
-                    onChange={(e) => setWorkspaceName(e.target.value)}
-                  />
-                </label>
-                <label className="text-xs text-muted uppercase tracking-wider">
-                  sync_interval_minutes (optional)
-                  <input
-                    className="mt-1 w-full bg-black/35 border border-white/20 rounded-lg px-3 py-2 text-sm"
-                    type="number"
-                    min="1"
-                    placeholder="30"
-                    value={defaultInterval}
-                    onChange={(e) => setDefaultInterval(e.target.value)}
-                  />
-                </label>
-                <label className="text-xs text-muted uppercase tracking-wider">
-                  Output Format
-                  <select
-                    className="mt-1 w-full bg-black/35 border border-white/20 rounded-lg px-3 py-2 text-sm"
-                    value={format}
-                    onChange={(e) => {
-                      const nextFormat = e.target.value;
-                      setFormat(nextFormat);
-                      if (nextFormat === "json" && filename.endsWith(".toml")) {
-                        setFilename(".polyws.json");
-                      } else if (
-                        nextFormat === "toml" &&
-                        filename.endsWith(".json")
-                      ) {
-                        setFilename(".polyws.toml");
-                      }
-                    }}
-                  >
-                    <option value="json">JSON</option>
-                    <option value="toml">TOML</option>
-                  </select>
-                </label>
-                <label className="text-xs text-muted uppercase tracking-wider">
-                  Suggested Filename
-                  <select
-                    className="mt-1 w-full bg-black/35 border border-white/20 rounded-lg px-3 py-2 text-sm"
-                    value={filename}
-                    onChange={(e) => setFilename(e.target.value)}
-                  >
-                    {FILE_NAMES.map((f) => (
-                      <option key={f} value={f}>
-                        {f}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-            </div>
-
-            <div className="h-px bg-white/10" />
-
             <div>
               <div className="flex items-center justify-between mb-2">
                 <h2 className="text-primary text-xs uppercase tracking-[0.18em]">Projects</h2>
@@ -684,26 +645,17 @@ export default function GeneratorPage() {
             <div>
               <div className="flex items-center justify-between mb-2">
                 <h2 className="text-primary text-xs uppercase tracking-[0.18em]">Workspace Tree Planner</h2>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    className="px-2 py-1 text-[10px] uppercase border border-white/20 rounded hover:bg-white/5"
-                    onClick={() => createNode(null, "folder")}
-                  >
-                    Add Folder
-                  </button>
-                  <button
-                    type="button"
-                    className="px-2 py-1 text-[10px] uppercase border border-white/20 rounded hover:bg-white/5"
-                    onClick={() => createNode(null, "repo")}
-                  >
-                    Add Repo
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  className="px-2 py-1 text-[10px] uppercase border border-white/20 rounded hover:bg-white/5"
+                  onClick={startWorkspaceEditor}
+                >
+                  Open Editor
+                </button>
               </div>
 
-              <div className="space-y-2">
-                <div className="flex items-center justify-between gap-2 rounded-lg border border-primary/30 bg-black/30 px-2 py-2">
+              <div className="rounded-xl border border-white/15 bg-black/30 px-3 py-2">
+                <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0 flex items-center gap-2">
                     <button
                       type="button"
@@ -713,21 +665,31 @@ export default function GeneratorPage() {
                     >
                       <FolderOpen size={16} />
                     </button>
-                    <span className="text-xs text-foreground truncate">
+                    <span className="text-sm text-foreground truncate">
                       [{workspaceName || "workspace"}]
                     </span>
                   </div>
-                  <button
-                    type="button"
-                    onClick={startWorkspaceEditor}
-                    className="p-1 rounded border border-white/20 text-muted hover:text-white"
-                    title="Edit workspace"
-                  >
-                    <Pencil size={14} />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => createNode(null, "folder")}
+                      className="p-1 rounded border border-white/20 text-muted hover:text-white"
+                      title="Add root folder"
+                    >
+                      <PlusCircle size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={startWorkspaceEditor}
+                      className="p-1 rounded border border-white/20 text-muted hover:text-white"
+                      title="Edit workspace"
+                    >
+                      <Pencil size={14} />
+                    </button>
+                  </div>
                 </div>
 
-                <div className="space-y-2">{renderTreeRows(null)}</div>
+                <div className="mt-0.5 space-y-1">{renderTreeRows(null)}</div>
               </div>
             </div>
 
@@ -801,6 +763,41 @@ export default function GeneratorPage() {
           <section className="space-y-4">
             <div className="bg-surface/90 border border-white/15 rounded-2xl p-4">
               <h2 className="text-primary text-xs uppercase tracking-[0.18em] mb-2">Generated Config</h2>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-3">
+                <label className="text-[11px] text-muted uppercase tracking-wider md:col-span-1">
+                  Output format
+                  <select
+                    className="mt-1 w-full bg-black/35 border border-white/20 rounded-lg px-3 py-2 text-sm"
+                    value={format}
+                    onChange={(e) => {
+                      const nextFormat = e.target.value;
+                      setFormat(nextFormat);
+                      if (nextFormat === "json" && filename.endsWith(".toml")) {
+                        setFilename(".polyws.json");
+                      } else if (nextFormat === "toml" && filename.endsWith(".json")) {
+                        setFilename(".polyws.toml");
+                      }
+                    }}
+                  >
+                    <option value="json">JSON</option>
+                    <option value="toml">TOML</option>
+                  </select>
+                </label>
+                <label className="text-[11px] text-muted uppercase tracking-wider md:col-span-2">
+                  Suggested filename
+                  <select
+                    className="mt-1 w-full bg-black/35 border border-white/20 rounded-lg px-3 py-2 text-sm"
+                    value={filename}
+                    onChange={(e) => setFilename(e.target.value)}
+                  >
+                    {FILE_NAMES.map((f) => (
+                      <option key={f} value={f}>
+                        {f}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
               <pre className="bg-black/70 border border-white/10 rounded-xl p-3 min-h-[280px] overflow-auto text-xs leading-6">
                 {output}
               </pre>
@@ -847,7 +844,36 @@ export default function GeneratorPage() {
             </div>
 
             <div className="bg-surface/90 border border-white/15 rounded-2xl p-4">
-              <h2 className="text-primary text-xs uppercase tracking-[0.18em] mb-2">Node Editor</h2>
+              <h2 className="text-primary text-xs uppercase tracking-[0.18em] mb-2">Workspace Tree Preview</h2>
+              <pre className="bg-black/70 border border-white/10 rounded-xl p-3 min-h-[230px] overflow-auto text-xs leading-6">
+                {treePreview}
+              </pre>
+              <p className="text-[11px] text-muted mt-2 leading-5">
+                Example style: <code className="text-cyan-300">├── apps/</code>,{" "}
+                <code className="text-cyan-300">└── services/</code>, and repo tags like{" "}
+                <code className="text-cyan-300">[repo: project-1]</code>.
+              </p>
+            </div>
+          </section>
+        </div>
+
+        {isEditorOpen ? (
+          <div className="fixed inset-0 z-[60] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="w-full max-w-2xl bg-surface border border-white/20 rounded-2xl p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-primary text-sm uppercase tracking-[0.16em]">
+                  {editorMode === "workspace" ? "Workspace Editor" : "Node Editor"}
+                </h2>
+                <button
+                  type="button"
+                  className="p-1 rounded border border-white/20 text-muted hover:text-white"
+                  onClick={closeEditor}
+                  title="Close editor"
+                >
+                  <XCircle size={16} />
+                </button>
+              </div>
+
               {editorMode === "workspace" ? (
                 <div className="space-y-3">
                   <label className="text-[11px] text-muted uppercase tracking-wider block">
@@ -858,30 +884,40 @@ export default function GeneratorPage() {
                       onChange={(e) => setWorkspaceName(e.target.value)}
                     />
                   </label>
+
+                  <label className="text-[11px] text-muted uppercase tracking-wider block">
+                    sync_interval_minutes (optional)
+                    <input
+                      className="mt-1 w-full bg-black/30 border border-white/15 rounded-lg px-3 py-2 text-sm"
+                      type="number"
+                      min="1"
+                      placeholder="30"
+                      value={defaultInterval}
+                      onChange={(e) => setDefaultInterval(e.target.value)}
+                    />
+                  </label>
+
                   <div className="flex flex-wrap gap-2">
                     <button
                       type="button"
                       className="px-3 py-2 text-xs uppercase tracking-wider border border-white/20 rounded-lg hover:bg-white/5"
                       onClick={() => createNode(null, "folder")}
                     >
-                      Add Root Folder
+                      + Root Folder
                     </button>
                     <button
                       type="button"
                       className="px-3 py-2 text-xs uppercase tracking-wider border border-white/20 rounded-lg hover:bg-white/5"
                       onClick={() => createNode(null, "repo")}
                     >
-                      Add Root Repo
+                      + Root Repo
                     </button>
                   </div>
-                  <p className="text-[11px] text-muted">
-                    Click any folder/repo icon in the tree to edit, delete, or add nested folders.
-                  </p>
                 </div>
               ) : (
                 <div className="space-y-3">
                   <label className="text-[11px] text-muted uppercase tracking-wider block">
-                    Node Type
+                    Node type
                     <select
                       className="mt-1 w-full bg-black/30 border border-white/15 rounded-lg px-3 py-2 text-sm"
                       value={nodeForm.kind}
@@ -889,10 +925,9 @@ export default function GeneratorPage() {
                         setNodeForm((prev) => ({
                           ...prev,
                           kind: e.target.value,
-                          repoName:
-                            e.target.value === "repo"
-                              ? prev.repoName || prev.name
-                              : "",
+                          repoName: e.target.value === "repo" ? prev.repoName || prev.name : "",
+                          url: e.target.value === "repo" ? prev.url : "",
+                          syncUrl: e.target.value === "repo" ? prev.syncUrl : "",
                         }))
                       }
                     >
@@ -906,24 +941,43 @@ export default function GeneratorPage() {
                     <input
                       className="mt-1 w-full bg-black/30 border border-white/15 rounded-lg px-3 py-2 text-sm"
                       value={nodeForm.name}
-                      onChange={(e) =>
-                        setNodeForm((prev) => ({ ...prev, name: e.target.value }))
-                      }
+                      onChange={(e) => setNodeForm((prev) => ({ ...prev, name: e.target.value }))}
                     />
                   </label>
 
                   {nodeForm.kind === "repo" ? (
-                    <label className="text-[11px] text-muted uppercase tracking-wider block">
-                      Repo Label
-                      <input
-                        className="mt-1 w-full bg-black/30 border border-white/15 rounded-lg px-3 py-2 text-sm"
-                        value={nodeForm.repoName}
-                        onChange={(e) =>
-                          setNodeForm((prev) => ({ ...prev, repoName: e.target.value }))
-                        }
-                        placeholder="project-1"
-                      />
-                    </label>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      <label className="text-[11px] text-muted uppercase tracking-wider block">
+                        Repo label
+                        <input
+                          className="mt-1 w-full bg-black/30 border border-white/15 rounded-lg px-3 py-2 text-sm"
+                          value={nodeForm.repoName}
+                          onChange={(e) =>
+                            setNodeForm((prev) => ({ ...prev, repoName: e.target.value }))
+                          }
+                        />
+                      </label>
+                      <label className="text-[11px] text-muted uppercase tracking-wider block">
+                        Remote repo URL
+                        <input
+                          className="mt-1 w-full bg-black/30 border border-white/15 rounded-lg px-3 py-2 text-sm"
+                          value={nodeForm.url}
+                          placeholder="git@github.com:org/repo.git"
+                          onChange={(e) => setNodeForm((prev) => ({ ...prev, url: e.target.value }))}
+                        />
+                      </label>
+                      <label className="text-[11px] text-muted uppercase tracking-wider block md:col-span-2">
+                        Sync repo URL (optional)
+                        <input
+                          className="mt-1 w-full bg-black/30 border border-white/15 rounded-lg px-3 py-2 text-sm"
+                          value={nodeForm.syncUrl}
+                          placeholder="git@gitlab.com:backup/repo.git"
+                          onChange={(e) =>
+                            setNodeForm((prev) => ({ ...prev, syncUrl: e.target.value }))
+                          }
+                        />
+                      </label>
+                    </div>
                   ) : null}
 
                   <label className="text-[11px] text-muted uppercase tracking-wider block">
@@ -931,9 +985,7 @@ export default function GeneratorPage() {
                     <select
                       className="mt-1 w-full bg-black/30 border border-white/15 rounded-lg px-3 py-2 text-sm"
                       value={nodeForm.parentId}
-                      onChange={(e) =>
-                        setNodeForm((prev) => ({ ...prev, parentId: e.target.value }))
-                      }
+                      onChange={(e) => setNodeForm((prev) => ({ ...prev, parentId: e.target.value }))}
                     >
                       <option value="">[workspace root]</option>
                       {rootFolderOptions
@@ -958,9 +1010,10 @@ export default function GeneratorPage() {
                     <button
                       type="button"
                       onClick={() => {
-                        if (selectedNodeId) {
-                          createNode(selectedNodeId, "folder");
-                        }
+                        const current = plannerNodes.find((n) => n.id === selectedNodeId);
+                        if (!current) return;
+                        const parentId = current.kind === "folder" ? current.id : current.parentId;
+                        createNode(parentId || null, "folder");
                       }}
                       className="inline-flex items-center gap-1 px-3 py-2 text-xs uppercase tracking-wider border border-white/20 rounded-lg hover:bg-white/5"
                     >
@@ -979,32 +1032,12 @@ export default function GeneratorPage() {
                       <Trash2 size={14} />
                       Delete
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => startWorkspaceEditor()}
-                      className="inline-flex items-center gap-1 px-3 py-2 text-xs uppercase tracking-wider border border-white/20 rounded-lg hover:bg-white/5"
-                    >
-                      <XCircle size={14} />
-                      Close
-                    </button>
                   </div>
                 </div>
               )}
             </div>
-
-            <div className="bg-surface/90 border border-white/15 rounded-2xl p-4">
-              <h2 className="text-primary text-xs uppercase tracking-[0.18em] mb-2">Workspace Tree Preview</h2>
-              <pre className="bg-black/70 border border-white/10 rounded-xl p-3 min-h-[230px] overflow-auto text-xs leading-6">
-                {treePreview}
-              </pre>
-              <p className="text-[11px] text-muted mt-2 leading-5">
-                Example style: <code className="text-cyan-300">├── apps/</code>,{" "}
-                <code className="text-cyan-300">└── services/</code>, and repo tags like{" "}
-                <code className="text-cyan-300">[repo: project-1]</code>.
-              </p>
-            </div>
-          </section>
-        </div>
+          </div>
+        ) : null}
       </main>
 
       <Footer />

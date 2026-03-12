@@ -27,10 +27,18 @@ impl Tab {
     }
 }
 
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub(super) struct AddForm {
     pub(super) fields: [String; 6], // name, path, url, branch, sync_url, depends_on
     pub(super) focused: usize,      // which field
+}
+
+impl Default for AddForm {
+    fn default() -> Self {
+        let mut fields: [String; 6] = Default::default();
+        fields[3] = "main".to_string();
+        Self { fields, focused: 0 }
+    }
 }
 
 pub(super) const FIELD_LABELS: [&str; 6] = [

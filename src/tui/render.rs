@@ -788,25 +788,22 @@ fn draw_add_form(f: &mut Frame, app: &App, area: Rect) {
         } else {
             Color::Gray
         };
-        let value = app.add_form.fields[i].trim_end();
+        let raw_value = app.add_form.fields[i].as_str();
+        let value = if is_branch && raw_value.trim().is_empty() {
+            "main"
+        } else {
+            raw_value
+        };
+        let is_empty = value.trim().is_empty();
 
         let (display, text_style) = if is_focused {
-            if value.is_empty() && is_branch {
-                (
-                    "main|".to_string(),
-                    Style::default()
-                        .fg(Color::White)
-                        .add_modifier(Modifier::BOLD),
-                )
-            } else {
-                (
-                    format!("{}|", value),
-                    Style::default()
-                        .fg(Color::White)
-                        .add_modifier(Modifier::BOLD),
-                )
-            }
-        } else if value.is_empty() {
+            (
+                format!("{}|", value),
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            )
+        } else if is_empty {
             if is_branch {
                 ("main".to_string(), Style::default().fg(Color::White))
             } else {

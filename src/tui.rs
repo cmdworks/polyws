@@ -20,7 +20,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{
         Block, BorderType, Borders, Cell, Clear, List, ListItem, Paragraph, Row, Table, TableState,
-        Tabs,
+        Tabs, Wrap,
     },
     Frame, Terminal,
 };
@@ -48,7 +48,9 @@ enum Tab {
 
 impl Tab {
     fn titles() -> &'static [&'static str] {
-        &["1:Dash", "2:Proj", "3:Graph", "4:Snap", "5:Sync", "6:Logs"]
+        &[
+            "1:Dash", "2:Proj", "3:Graph", "4:Snap", "5:Sync", "6:Doctor",
+        ]
     }
     fn from_usize(i: usize) -> Self {
         match i {
@@ -485,7 +487,7 @@ pub fn run() -> Result<()> {
 // ─────────────────────────────────────────────────────────
 
 fn draw_help(f: &mut Frame, area: Rect) {
-    let popup_area = centered_rect(60, 60, area);
+    let popup_area = centered_rect(74, 78, area);
     f.render_widget(Clear, popup_area);
 
     let block = Block::default()
@@ -498,42 +500,42 @@ fn draw_help(f: &mut Frame, area: Rect) {
             " Global",
             Style::default().add_modifier(Modifier::BOLD),
         )]),
-        Line::from("   1-5 or Tab : Switch Tabs"),
-        Line::from("   h          : Toggle this Help popup"),
-        Line::from("   r          : Reload configuration"),
-        Line::from("   q          : Quit polyws"),
+        Line::from("   1-6 / Tab     : Switch tabs"),
+        Line::from("   h             : Toggle help"),
+        Line::from("   r             : Reload config"),
+        Line::from("   q             : Quit"),
         Line::from(""),
         Line::from(vec![Span::styled(
-            " Projects Tab",
+            " Projects",
             Style::default().add_modifier(Modifier::BOLD),
         )]),
-        Line::from("   p          : Pull all projects"),
-        Line::from("   s          : Create global snapshot"),
-        Line::from("   d          : Run Doctor checks"),
+        Line::from("   ↑↓ / j k      : Move selection"),
+        Line::from("   a             : Add project"),
+        Line::from("   d / Del       : Delete selected"),
+        Line::from("   p / Enter     : Pull selected"),
+        Line::from("   e             : Exec command"),
+        Line::from("   s             : Refresh statuses"),
         Line::from(""),
         Line::from(vec![Span::styled(
-            " Graph Tab",
+            " Add Form",
             Style::default().add_modifier(Modifier::BOLD),
         )]),
-        Line::from("   ↑ / ↓      : Navigate list"),
-        Line::from("   a          : Add new project"),
-        Line::from("   d / Del    : Delete selected project"),
-        Line::from("   p / Enter  : Pull selected project"),
-        Line::from("   e          : Execute shell command in dependents"),
-        Line::from("   s          : Refresh git statuses"),
+        Line::from("   Tab / ShiftTab: Next/prev field"),
+        Line::from("   ↑↓            : Next/prev field"),
+        Line::from("   Enter         : Save"),
+        Line::from("   Esc           : Cancel"),
         Line::from(""),
         Line::from(vec![Span::styled(
-            " Snapshots / Sync / Logs Tabs",
+            " Other Tabs",
             Style::default().add_modifier(Modifier::BOLD),
         )]),
-        Line::from("   s (Sync)   : Start / Stop daemon"),
-        Line::from("   n (Sync)   : Force Sync Now"),
-        Line::from("   c (Snaps)  : Create snapshot"),
-        Line::from("   r (Snaps)  : Restore selected snapshot"),
-        Line::from("   d (Logs)   : Run Doctor checks"),
+        Line::from("   Dashboard: p pull-all, s snapshot, d doctor"),
+        Line::from("   Snapshots: c create, r/Enter restore"),
+        Line::from("   Sync     : s start/stop, n sync now"),
+        Line::from("   Doctor   : d run doctor checks"),
     ];
 
-    let p = Paragraph::new(text).block(block);
+    let p = Paragraph::new(text).wrap(Wrap { trim: true }).block(block);
     f.render_widget(p, popup_area);
 }
 
@@ -568,6 +570,13 @@ fn handle_key(app: &mut App, code: KeyCode, mods: KeyModifiers) -> bool {
                 app.add_form.focused = (app.add_form.focused + 1) % FIELD_LABELS.len();
             }
             KeyCode::BackTab => {
+                app.add_form.focused =
+                    (app.add_form.focused + FIELD_LABELS.len() - 1) % FIELD_LABELS.len();
+            }
+            KeyCode::Down => {
+                app.add_form.focused = (app.add_form.focused + 1) % FIELD_LABELS.len();
+            }
+            KeyCode::Up => {
                 app.add_form.focused =
                     (app.add_form.focused + FIELD_LABELS.len() - 1) % FIELD_LABELS.len();
             }
@@ -874,8 +883,6 @@ fn draw(f: &mut Frame, app: &mut App) {
             .fg(Color::Black)
             .add_modifier(Modifier::BOLD),
     );
-    let sep = Paragraph::new("|").style(Style::default().fg(Color::DarkGray));
-
     let version_str = format!("v{}", env!("CARGO_PKG_VERSION"));
     let version = Paragraph::new(version_str)
         .style(Style::default().fg(Color::DarkGray))
@@ -923,7 +930,6 @@ fn draw(f: &mut Frame, app: &mut App) {
             .direction(Direction::Horizontal)
             .constraints([
                 Constraint::Length((7 + workspace_name.len()) as u16), // badge + workspace size
-                Constraint::Length(1),                                 // "|"
                 Constraint::Min(0),                                    // Tabs
                 Constraint::Length(6),                                 // "v1.0.0"
             ])
@@ -934,9 +940,8 @@ fn draw(f: &mut Frame, app: &mut App) {
             ..top_bar_chunks[0]
         };
         f.render_widget(badge, badge_rect);
-        f.render_widget(sep, top_bar_chunks[1]);
-        f.render_widget(tabs, top_bar_chunks[2]);
-        f.render_widget(version, top_bar_chunks[3]);
+        f.render_widget(tabs, top_bar_chunks[1]);
+        f.render_widget(version, top_bar_chunks[2]);
     }
 
     // ── Content ───────────────────────────────────────────
@@ -950,16 +955,57 @@ fn draw(f: &mut Frame, app: &mut App) {
     }
 
     // ── Status / hint bar ─────────────────────────────────
+    let compact_hints = chunks[4].width < 110;
     let hint = if app.config.is_none() {
-        " i:Init workspace  q:Quit"
+        if compact_hints {
+            "i:Init q:Quit"
+        } else {
+            "i:Init workspace q:Quit"
+        }
     } else {
         match app.tab {
-            Tab::Dashboard => " p:Pull-all  s:Snapshot  d:Doctor  r:Reload  Tab:Switch  q:Quit",
-            Tab::Projects => " a:Add  d:Delete  p/↵:Pull  e:Exec  s:Refresh  ↑↓:Move  q:Quit",
-            Tab::Graph => " r:Reload  Tab:Switch  q:Quit",
-            Tab::Snapshots => " c:Create  ↵/r:Restore  ↑↓:Move  q:Quit",
-            Tab::Sync => " s:Start/Stop  n:Sync Now  r:Reload  q:Quit",
-            Tab::Logs => " d:Run Doctor  r:Reload  q:Quit",
+            Tab::Dashboard => {
+                if compact_hints {
+                    "p:Pull s:Snap d:Doc r:Reload Tab q"
+                } else {
+                    "p:Pull-all s:Snapshot d:Doctor r:Reload Tab:Switch q:Quit"
+                }
+            }
+            Tab::Projects => {
+                if compact_hints {
+                    "a:Add d:Del p/↵:Pull e:Exec s:Ref ↑↓:Move q"
+                } else {
+                    "a:Add d:Delete p/↵:Pull e:Exec s:Refresh ↑↓:Move q:Quit"
+                }
+            }
+            Tab::Graph => {
+                if compact_hints {
+                    "r:Reload Tab q"
+                } else {
+                    "r:Reload Tab:Switch q:Quit"
+                }
+            }
+            Tab::Snapshots => {
+                if compact_hints {
+                    "c:Create r/↵:Restore ↑↓:Move q"
+                } else {
+                    "c:Create ↵/r:Restore ↑↓:Move q:Quit"
+                }
+            }
+            Tab::Sync => {
+                if compact_hints {
+                    "s:Start/Stop n:Now r q"
+                } else {
+                    "s:Start/Stop n:SyncNow r:Reload q:Quit"
+                }
+            }
+            Tab::Logs => {
+                if compact_hints {
+                    "d:RunDoctor r q"
+                } else {
+                    "d:Run Doctor r:Reload q:Quit"
+                }
+            }
         }
     };
 
@@ -1508,7 +1554,7 @@ fn draw_add_form(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(Clear, popup_area);
 
     let block = Block::default()
-        .title(" Add Project  [Tab=next field  Enter=save  Esc=cancel] ")
+        .title(" Add Project [Tab/↑↓=field Enter=save Esc=cancel] ")
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Yellow));
     f.render_widget(block, popup_area);
@@ -1529,6 +1575,8 @@ fn draw_add_form(f: &mut Frame, app: &App, area: Rect) {
         let value = &app.add_form.fields[i];
         let display = if is_focused {
             format!("{}_", value)
+        } else if i == 3 && value.is_empty() {
+            "main".to_string()
         } else {
             value.clone()
         };
@@ -1541,8 +1589,7 @@ fn draw_add_form(f: &mut Frame, app: &App, area: Rect) {
             )
             .style(if is_focused {
                 Style::default()
-                    .fg(Color::Black)
-                    .bg(Color::Yellow)
+                    .fg(Color::White)
                     .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::White)

@@ -552,84 +552,86 @@ fn draw_help(f: &mut Frame, area: Rect) {
 // Key handling
 // ─────────────────────────────────────────────────────────
 
-/// Returns true when the app should quit.
-fn handle_key(app: &mut App, code: KeyCode, mods: KeyModifiers) -> bool {
-    // Handle Esc key for all overlays first
-    if code == KeyCode::Esc {
-        if app.show_add_form {
-            app.show_add_form = false;
-            app.add_form = AddForm::default();
-            return false;
+fn close_overlay_on_escape(app: &mut App, code: KeyCode) -> bool {
+    if code != KeyCode::Esc {
+        return false;
+    }
+
+    if app.show_add_form {
+        app.show_add_form = false;
+        app.add_form = AddForm::default();
+        return true;
+    }
+    if app.show_exec_prompt {
+        app.show_exec_prompt = false;
+        app.exec_input.clear();
+        return true;
+    }
+    if app.show_help {
+        app.show_help = false;
+        return true;
+    }
+    false
+}
+
+fn handle_add_form_overlay_key(app: &mut App, code: KeyCode) -> bool {
+    if !app.show_add_form {
+        return false;
+    }
+
+    match code {
+        KeyCode::Tab | KeyCode::Down => {
+            app.add_form.focused = (app.add_form.focused + 1) % FIELD_LABELS.len();
         }
-        if app.show_exec_prompt {
+        KeyCode::BackTab | KeyCode::Up => {
+            app.add_form.focused =
+                (app.add_form.focused + FIELD_LABELS.len() - 1) % FIELD_LABELS.len();
+        }
+        KeyCode::Enter => app.submit_add_form(),
+        KeyCode::Backspace => {
+            let f = app.add_form.focused;
+            app.add_form.fields[f].pop();
+        }
+        KeyCode::Char(c) => {
+            let f = app.add_form.focused;
+            app.add_form.fields[f].push(c);
+        }
+        _ => {}
+    }
+    true
+}
+
+fn handle_exec_prompt_overlay_key(app: &mut App, code: KeyCode) -> bool {
+    if !app.show_exec_prompt {
+        return false;
+    }
+
+    match code {
+        KeyCode::Esc => {
             app.show_exec_prompt = false;
             app.exec_input.clear();
-            return false;
         }
-        if app.show_help {
-            app.show_help = false;
-            return false;
+        KeyCode::Enter => {
+            let cmd = app.exec_input.trim().to_string();
+            app.show_exec_prompt = false;
+            app.exec_input.clear();
+            if !cmd.is_empty() {
+                run_exec_cmd(app, &cmd);
+            }
         }
+        KeyCode::Backspace => {
+            app.exec_input.pop();
+        }
+        KeyCode::Char(c) => {
+            app.exec_input.push(c);
+        }
+        _ => {}
     }
 
-    // ── Add-form overlay ──────────────────────────────────
-    if app.show_add_form {
-        match code {
-            KeyCode::Tab => {
-                app.add_form.focused = (app.add_form.focused + 1) % FIELD_LABELS.len();
-            }
-            KeyCode::BackTab => {
-                app.add_form.focused =
-                    (app.add_form.focused + FIELD_LABELS.len() - 1) % FIELD_LABELS.len();
-            }
-            KeyCode::Down => {
-                app.add_form.focused = (app.add_form.focused + 1) % FIELD_LABELS.len();
-            }
-            KeyCode::Up => {
-                app.add_form.focused =
-                    (app.add_form.focused + FIELD_LABELS.len() - 1) % FIELD_LABELS.len();
-            }
-            KeyCode::Enter => app.submit_add_form(),
-            KeyCode::Backspace => {
-                let f = app.add_form.focused;
-                app.add_form.fields[f].pop();
-            }
-            KeyCode::Char(c) => {
-                let f = app.add_form.focused;
-                app.add_form.fields[f].push(c);
-            }
-            _ => {}
-        }
-        return false;
-    }
+    true
+}
 
-    // ── Exec prompt overlay ───────────────────────────────
-    if app.show_exec_prompt {
-        match code {
-            KeyCode::Esc => {
-                app.show_exec_prompt = false;
-                app.exec_input.clear();
-            }
-            KeyCode::Enter => {
-                let cmd = app.exec_input.trim().to_string();
-                app.show_exec_prompt = false;
-                app.exec_input.clear();
-                if !cmd.is_empty() {
-                    run_exec_cmd(app, &cmd);
-                }
-            }
-            KeyCode::Backspace => {
-                app.exec_input.pop();
-            }
-            KeyCode::Char(c) => {
-                app.exec_input.push(c);
-            }
-            _ => {}
-        }
-        return false;
-    }
-
-    // ── Global keys ───────────────────────────────────────
+fn handle_global_key(app: &mut App, code: KeyCode, mods: KeyModifiers) -> bool {
     match code {
         KeyCode::Char('h') | KeyCode::Char('H') => {
             app.show_help = !app.show_help;
@@ -668,12 +670,13 @@ fn handle_key(app: &mut App, code: KeyCode, mods: KeyModifiers) -> bool {
         }
 
         KeyCode::Char('r') | KeyCode::Char('R') => app.reload(),
-
         _ => {}
     }
 
-    // ── Tab-specific keys ─────────────────────────────────
-    // ── Tab-specific keys ─────────────────────────────────
+    false
+}
+
+fn handle_tab_key(app: &mut App, code: KeyCode) {
     match app.tab {
         Tab::Dashboard => match code {
             KeyCode::Char('p') => app.pull_all(),
@@ -740,7 +743,23 @@ fn handle_key(app: &mut App, code: KeyCode, mods: KeyModifiers) -> bool {
             }
         }
     }
+}
 
+/// Returns true when the app should quit.
+fn handle_key(app: &mut App, code: KeyCode, mods: KeyModifiers) -> bool {
+    if close_overlay_on_escape(app, code) {
+        return false;
+    }
+    if handle_add_form_overlay_key(app, code) {
+        return false;
+    }
+    if handle_exec_prompt_overlay_key(app, code) {
+        return false;
+    }
+    if handle_global_key(app, code, mods) {
+        return true;
+    }
+    handle_tab_key(app, code);
     false
 }
 
@@ -1576,6 +1595,7 @@ fn draw_add_form(f: &mut Frame, app: &App, area: Rect) {
 
     for (i, label) in FIELD_LABELS.iter().enumerate() {
         let is_focused = app.add_form.focused == i;
+        let is_branch = i == 3;
         let border_color = if is_focused {
             Color::Yellow
         } else {
@@ -1584,17 +1604,30 @@ fn draw_add_form(f: &mut Frame, app: &App, area: Rect) {
         let value = app.add_form.fields[i].trim_end();
 
         let (display, text_style) = if is_focused {
-            (
-                format!("{}|", value),
-                Style::default()
-                    .fg(Color::White)
-                    .add_modifier(Modifier::BOLD),
-            )
+            if value.is_empty() && is_branch {
+                (
+                    "main|".to_string(),
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                )
+            } else {
+                (
+                    format!("{}|", value),
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                )
+            }
         } else if value.is_empty() {
-            (
-                FIELD_HINTS[i].to_string(),
-                Style::default().fg(Color::DarkGray),
-            )
+            if is_branch {
+                ("main".to_string(), Style::default().fg(Color::White))
+            } else {
+                (
+                    FIELD_HINTS[i].to_string(),
+                    Style::default().fg(Color::DarkGray),
+                )
+            }
         } else {
             (value.to_string(), Style::default().fg(Color::White))
         };

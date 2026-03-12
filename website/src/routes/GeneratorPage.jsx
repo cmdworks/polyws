@@ -22,18 +22,6 @@ const FILE_NAMES = [
   ".poly.toml",
 ];
 
-function emptyProject() {
-  return {
-    name: "",
-    path: "",
-    url: "",
-    branch: "main",
-    dependsOnCsv: "",
-    syncUrl: "",
-    syncInterval: "",
-  };
-}
-
 function normalizePath(value) {
   return String(value)
     .trim()
@@ -48,15 +36,6 @@ function csvToArray(value) {
     .split(",")
     .map((v) => v.trim())
     .filter(Boolean);
-}
-
-function slugify(value) {
-  return String(value)
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9/_-]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
 }
 
 function escToml(value) {
@@ -112,13 +91,32 @@ function toToml(cfg) {
   return `${lines.join("\n")}\n`;
 }
 
+function collectDescendantIds(nodes, nodeId) {
+  const direct = nodes.filter((n) => n.parentId === nodeId);
+  const nested = direct.flatMap((n) => collectDescendantIds(nodes, n.id));
+  return [nodeId, ...nested];
+}
+
+function makeNode(id, kind, parentId = null) {
+  const serial = id.split("-").pop();
+  const base = kind === "repo" ? "project" : "folder";
+  return {
+    id,
+    kind,
+    parentId,
+    name: `${base}-${serial}`,
+    repoName: kind === "repo" ? `${base}-${serial}` : "",
+    url: "",
+    syncUrl: "",
+    branch: "main",
+  };
+}
+
 function buildTreePreview(workspaceName, nodes) {
   const childMap = new Map();
   nodes.forEach((node) => {
     const key = node.parentId || "root";
-    if (!childMap.has(key)) {
-      childMap.set(key, []);
-    }
+    if (!childMap.has(key)) childMap.set(key, []);
     childMap.get(key).push(node);
   });
 
@@ -134,13 +132,12 @@ function buildTreePreview(workspaceName, nodes) {
     entries.forEach((node, index) => {
       const isLast = index === entries.length - 1;
       const connector = isLast ? "└── " : "├── ";
-      const name = node.kind === "folder" ? `${node.name}/` : `${node.name}/`;
       const repoInfo =
         node.kind === "repo"
           ? `  [repo: ${node.repoName || node.name}]`
           : "";
 
-      lines.push(`${prefix}${connector}${name}${repoInfo}`);
+      lines.push(`${prefix}${connector}${node.name}/${repoInfo}`);
 
       if (node.kind === "folder") {
         walk(node.id, `${prefix}${isLast ? "    " : "│   "}`);
@@ -151,29 +148,78 @@ function buildTreePreview(workspaceName, nodes) {
   walk(null, "");
 
   if (lines.length === 1) {
-    lines.push("└── (add folders/projects)");
+    lines.push("└── (add folders and repos)");
   }
 
   return `${lines.join("\n")}\n`;
 }
 
-function collectDescendantIds(nodes, nodeId) {
-  const direct = nodes.filter((n) => n.parentId === nodeId);
-  const nested = direct.flatMap((n) => collectDescendantIds(nodes, n.id));
-  return [nodeId, ...nested];
+function pathForNode(node, nodeMap) {
+  const names = [];
+  let cursor = node;
+
+  while (cursor) {
+    if (cursor.name && cursor.name.trim()) {
+      names.push(cursor.name.trim());
+    }
+    cursor = cursor.parentId ? nodeMap.get(cursor.parentId) : null;
+  }
+
+  return normalizePath(names.reverse().join("/"));
 }
 
-function makeNode(id, kind, parentId = null) {
-  const base = kind === "repo" ? "project" : "folder";
-  return {
-    id,
-    kind,
-    parentId,
-    name: `${base}-${id.split("-").pop()}`,
-    repoName: kind === "repo" ? `${base}-${id.split("-").pop()}` : "",
-    url: "",
-    syncUrl: "",
-  };
+function deriveProjects(nodes) {
+  const nodeMap = new Map(nodes.map((node) => [node.id, node]));
+  const warnings = [];
+  const projects = [];
+
+  nodes
+    .filter((node) => node.kind === "repo")
+    .forEach((repoNode) => {
+      const dirName = repoNode.name.trim();
+      const projectName = (repoNode.repoName || repoNode.name).trim();
+      const url = repoNode.url.trim();
+
+      if (!dirName || !projectName || !url) {
+        warnings.push(
+          `repo '${repoNode.name || repoNode.id}' skipped (name/project/url required)`,
+        );
+        return;
+      }
+
+      const fullPath = pathForNode(repoNode, nodeMap);
+      const project = {
+        name: projectName,
+        url,
+        branch: repoNode.branch?.trim() || "main",
+      };
+
+      if (fullPath && fullPath !== projectName) {
+        project.path = fullPath;
+      }
+
+      const syncUrl = repoNode.syncUrl.trim();
+      if (syncUrl) {
+        project.sync_url = syncUrl;
+      }
+
+      projects.push(project);
+    });
+
+  const pathSeen = new Map();
+  projects.forEach((project) => {
+    const effectivePath = normalizePath(project.path || project.name);
+    if (!pathSeen.has(effectivePath)) pathSeen.set(effectivePath, []);
+    pathSeen.get(effectivePath).push(project.name);
+  });
+
+  for (const [repoPath, names] of pathSeen.entries()) {
+    if (names.length > 1) {
+      warnings.push(`duplicate path '${repoPath}' used by: ${names.join(", ")}`);
+    }
+  }
+
+  return { projects, warnings };
 }
 
 export default function GeneratorPage() {
@@ -182,8 +228,6 @@ export default function GeneratorPage() {
   const [format, setFormat] = useState("json");
   const [filename, setFilename] = useState(".polyws");
 
-  const [projects, setProjects] = useState([emptyProject()]);
-
   const [vmEnabled, setVmEnabled] = useState(false);
   const [vmHost, setVmHost] = useState("");
   const [vmUser, setVmUser] = useState("");
@@ -191,74 +235,81 @@ export default function GeneratorPage() {
   const [vmSync, setVmSync] = useState("mutagen");
   const [vmDeps, setVmDeps] = useState("");
 
-  const [nodeCounter, setNodeCounter] = useState(5);
   const [plannerNodes, setPlannerNodes] = useState([
-    { id: "node-1", kind: "folder", parentId: null, name: "apps", repoName: "", url: "", syncUrl: "" },
+    {
+      id: "node-1",
+      kind: "folder",
+      parentId: null,
+      name: "apps",
+      repoName: "",
+      url: "",
+      syncUrl: "",
+      branch: "main",
+    },
     {
       id: "node-2",
       kind: "repo",
       parentId: null,
-      name: "project-1",
-      repoName: "project-1",
+      name: "core",
+      repoName: "core",
+      url: "git@github.com:org/core.git",
+      syncUrl: "",
+      branch: "main",
+    },
+    {
+      id: "node-3",
+      kind: "folder",
+      parentId: null,
+      name: "services",
+      repoName: "",
       url: "",
       syncUrl: "",
+      branch: "main",
     },
-    { id: "node-3", kind: "folder", parentId: null, name: "services", repoName: "", url: "", syncUrl: "" },
-    { id: "node-4", kind: "folder", parentId: "node-3", name: "api", repoName: "", url: "", syncUrl: "" },
+    {
+      id: "node-4",
+      kind: "folder",
+      parentId: "node-3",
+      name: "api",
+      repoName: "",
+      url: "",
+      syncUrl: "",
+      branch: "main",
+    },
   ]);
+  const [nodeCounter, setNodeCounter] = useState(5);
 
-  const [editorMode, setEditorMode] = useState("workspace");
   const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [editorMode, setEditorMode] = useState("workspace");
   const [selectedNodeId, setSelectedNodeId] = useState(null);
   const [nodeForm, setNodeForm] = useState({
     id: null,
-    name: "",
     kind: "folder",
     parentId: "",
+    name: "",
     repoName: "",
     url: "",
     syncUrl: "",
+    branch: "main",
   });
 
-  const { config, skippedRows } = useMemo(() => {
-    const normalized = projects.map((p) => {
-      const name = p.name.trim();
-      const url = p.url.trim();
-      if (!name || !url) return null;
+  const { plannerProjects, plannerWarnings } = useMemo(() => {
+    const derived = deriveProjects(plannerNodes);
+    return {
+      plannerProjects: derived.projects,
+      plannerWarnings: derived.warnings,
+    };
+  }, [plannerNodes]);
 
-      const out = {
-        name,
-        url,
-        branch: p.branch.trim() || "main",
-      };
-
-      const path = normalizePath(p.path);
-      if (path && path !== name) out.path = path;
-
-      const deps = csvToArray(p.dependsOnCsv);
-      if (deps.length) out.depends_on = deps;
-
-      const syncUrl = p.syncUrl.trim();
-      if (syncUrl) out.sync_url = syncUrl;
-
-      const interval = Number(p.syncInterval);
-      if (Number.isFinite(interval) && interval > 0) {
-        out.sync_interval = interval;
-      }
-
-      return out;
-    });
-
-    const cleanProjects = normalized.filter(Boolean);
-
+  const config = useMemo(() => {
     const cfg = {
       name: workspaceName.trim() || "workspace",
-      projects: cleanProjects,
+      projects: plannerProjects,
     };
 
-    const syncIntervalMinutes = Number(defaultInterval);
-    if (Number.isFinite(syncIntervalMinutes) && syncIntervalMinutes > 0) {
-      cfg.sync_interval_minutes = syncIntervalMinutes;
+    const interval = Number(defaultInterval);
+    if (Number.isFinite(interval) && interval > 0) {
+      cfg.sync_interval_minutes = interval;
     }
 
     if (vmEnabled) {
@@ -272,18 +323,16 @@ export default function GeneratorPage() {
           path,
           sync: vmSync.trim() || "rsync",
         };
+
         const deps = csvToArray(vmDeps);
         if (deps.length) cfg.vm.dependencies = deps;
       }
     }
 
-    return {
-      config: cfg,
-      skippedRows: normalized.length - cleanProjects.length,
-    };
+    return cfg;
   }, [
-    projects,
     workspaceName,
+    plannerProjects,
     defaultInterval,
     vmEnabled,
     vmHost,
@@ -292,29 +341,6 @@ export default function GeneratorPage() {
     vmSync,
     vmDeps,
   ]);
-
-  const warnings = useMemo(() => {
-    const msgs = [];
-
-    if (skippedRows > 0) {
-      msgs.push(`${skippedRows} incomplete project row(s) skipped.`);
-    }
-
-    const seen = new Map();
-    config.projects.forEach((p) => {
-      const effective = normalizePath(p.path || p.name);
-      if (!seen.has(effective)) seen.set(effective, []);
-      seen.get(effective).push(p.name);
-    });
-
-    for (const [path, names] of seen.entries()) {
-      if (names.length > 1) {
-        msgs.push(`duplicate path '${path}' used by: ${names.join(", ")}`);
-      }
-    }
-
-    return msgs;
-  }, [config.projects, skippedRows]);
 
   const output = useMemo(() => {
     if (format === "json") {
@@ -329,34 +355,47 @@ export default function GeneratorPage() {
   );
 
   const rootFolderOptions = useMemo(() => {
-    const folders = plannerNodes.filter((n) => n.kind === "folder");
-    return folders.sort((a, b) => a.name.localeCompare(b.name));
+    return plannerNodes
+      .filter((node) => node.kind === "folder")
+      .sort((a, b) => a.name.localeCompare(b.name));
   }, [plannerNodes]);
 
-  const startWorkspaceEditor = () => {
+  const childMap = useMemo(() => {
+    const map = new Map();
+    plannerNodes.forEach((node) => {
+      const key = node.parentId || "root";
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(node);
+    });
+
+    for (const list of map.values()) {
+      list.sort((a, b) => a.name.localeCompare(b.name));
+    }
+
+    return map;
+  }, [plannerNodes]);
+
+  const openWorkspaceEditor = () => {
     setEditorMode("workspace");
     setSelectedNodeId(null);
     setIsEditorOpen(true);
   };
 
-  const closeEditor = () => {
-    setIsEditorOpen(false);
-  };
-
-  const startNodeEditor = (nodeId) => {
-    const node = plannerNodes.find((n) => n.id === nodeId);
+  const openNodeEditor = (nodeId) => {
+    const node = plannerNodes.find((item) => item.id === nodeId);
     if (!node) return;
 
     setEditorMode("node");
     setSelectedNodeId(node.id);
     setNodeForm({
       id: node.id,
-      name: node.name,
       kind: node.kind,
       parentId: node.parentId || "",
+      name: node.name,
       repoName: node.repoName || "",
       url: node.url || "",
       syncUrl: node.syncUrl || "",
+      branch: node.branch || "main",
     });
     setIsEditorOpen(true);
   };
@@ -371,68 +410,67 @@ export default function GeneratorPage() {
     setSelectedNodeId(next.id);
     setNodeForm({
       id: next.id,
-      name: next.name,
       kind: next.kind,
       parentId: next.parentId || "",
+      name: next.name,
       repoName: next.repoName,
-      url: "",
-      syncUrl: "",
+      url: next.url,
+      syncUrl: next.syncUrl,
+      branch: next.branch,
     });
     setIsEditorOpen(true);
   };
 
+  const createChildNode = (kind) => {
+    if (!selectedNodeId) return;
+    const current = plannerNodes.find((n) => n.id === selectedNodeId);
+    if (!current) return;
+
+    const parentId = current.kind === "folder" ? current.id : current.parentId;
+    createNode(parentId || null, kind);
+  };
+
+  const closeEditor = () => {
+    setIsEditorOpen(false);
+  };
+
   const saveNode = () => {
     if (!nodeForm.id) return;
-
     const cleanName = nodeForm.name.trim();
     if (!cleanName) return;
 
     const cleanRepoName = nodeForm.repoName.trim();
-    const cleanUrl = nodeForm.url.trim();
-    const cleanSyncUrl = nodeForm.syncUrl.trim();
 
     setPlannerNodes((prev) =>
       prev.map((node) => {
         if (node.id !== nodeForm.id) return node;
+
+        const kind = nodeForm.kind;
         return {
           ...node,
-          name: cleanName,
-          kind: nodeForm.kind,
+          kind,
           parentId: nodeForm.parentId || null,
-          repoName:
-            nodeForm.kind === "repo"
-              ? cleanRepoName || cleanName
-              : "",
-          url: nodeForm.kind === "repo" ? cleanUrl : "",
-          syncUrl: nodeForm.kind === "repo" ? cleanSyncUrl : "",
+          name: cleanName,
+          repoName: kind === "repo" ? cleanRepoName || cleanName : "",
+          url: kind === "repo" ? nodeForm.url.trim() : "",
+          syncUrl: kind === "repo" ? nodeForm.syncUrl.trim() : "",
+          branch: kind === "repo" ? nodeForm.branch.trim() || "main" : "main",
         };
       }),
     );
+
     setIsEditorOpen(false);
   };
 
   const deleteNode = (nodeId) => {
-    const ids = new Set(collectDescendantIds(plannerNodes, nodeId));
-    setPlannerNodes((prev) => prev.filter((n) => !ids.has(n.id)));
+    const idsToDelete = new Set(collectDescendantIds(plannerNodes, nodeId));
+    setPlannerNodes((prev) => prev.filter((node) => !idsToDelete.has(node.id)));
 
-    if (selectedNodeId && ids.has(selectedNodeId)) {
+    if (selectedNodeId && idsToDelete.has(selectedNodeId)) {
       setSelectedNodeId(null);
       setEditorMode("workspace");
       setIsEditorOpen(false);
     }
-  };
-
-  const updateProject = (idx, key, value) => {
-    setProjects((prev) =>
-      prev.map((p, i) => (i === idx ? { ...p, [key]: value } : p)),
-    );
-  };
-
-  const removeProject = (idx) => {
-    setProjects((prev) => {
-      const next = prev.filter((_, i) => i !== idx);
-      return next.length ? next : [emptyProject()];
-    });
   };
 
   const copyOutput = async () => {
@@ -454,64 +492,44 @@ export default function GeneratorPage() {
     URL.revokeObjectURL(a.href);
   };
 
-  const childMap = useMemo(() => {
-    const map = new Map();
-    plannerNodes.forEach((node) => {
-      const key = node.parentId || "root";
-      if (!map.has(key)) map.set(key, []);
-      map.get(key).push(node);
-    });
-    for (const list of map.values()) {
-      list.sort((a, b) => a.name.localeCompare(b.name));
-    }
-    return map;
-  }, [plannerNodes]);
-
-  const renderTreeRows = (parentId, prefix = "") => {
+  const renderTreeRows = (parentId, depth = 0) => {
     const nodes = childMap.get(parentId || "root") || [];
 
-    return nodes.map((node, idx) => {
-      const isLast = idx === nodes.length - 1;
-      const connector = isLast ? "└──" : "├──";
-      const branchPrefix = `${prefix}${connector}`;
-      const nextPrefix = `${prefix}${isLast ? "    " : "│   "}`;
+    return nodes.map((node) => {
+      const indent = depth * 14;
+      const hasChildren = (childMap.get(node.id) || []).length > 0;
 
       return (
-        <React.Fragment key={node.id}>
-          <div className="flex items-center justify-between gap-2 py-0.5">
+        <div key={node.id} className="space-y-0.5">
+          <div
+            style={{ marginLeft: `${indent}px` }}
+            className="flex items-center justify-between gap-2 py-0.5"
+          >
             <div className="min-w-0 flex items-center gap-2">
-              <span className="text-muted text-xs shrink-0">{branchPrefix}</span>
               <button
                 type="button"
-                onClick={() => startNodeEditor(node.id)}
+                onClick={() => openNodeEditor(node.id)}
                 className="text-primary hover:text-white shrink-0"
                 title="Edit node"
               >
                 {node.kind === "folder" ? <Folder size={16} /> : <GitBranch size={16} />}
               </button>
-              <span className="text-xs text-foreground truncate">
-                {node.kind === "folder" ? `${node.name}/` : `${node.name}/`}
+              <span className="text-sm text-foreground truncate">
+                {node.name}/
                 {node.kind === "repo" ? (
                   <span className="text-cyan-300"> {`[repo: ${node.repoName || node.name}]`}</span>
                 ) : null}
               </span>
             </div>
+
             <div className="flex items-center gap-1 shrink-0">
               <button
                 type="button"
-                onClick={() => startNodeEditor(node.id)}
+                onClick={() => openNodeEditor(node.id)}
                 className="p-1 rounded border border-white/20 text-muted hover:text-white"
                 title="Edit"
               >
                 <Pencil size={14} />
-              </button>
-              <button
-                type="button"
-                onClick={() => createNode(node.kind === "folder" ? node.id : node.parentId, "folder")}
-                className="p-1 rounded border border-white/20 text-muted hover:text-white"
-                title="Add nested folder"
-              >
-                <PlusCircle size={14} />
               </button>
               <button
                 type="button"
@@ -524,10 +542,15 @@ export default function GeneratorPage() {
             </div>
           </div>
 
-          {node.kind === "folder" ? (
-            <div className="pl-2">{renderTreeRows(node.id, nextPrefix)}</div>
+          {node.kind === "folder" && hasChildren ? (
+            <div
+              style={{ marginLeft: `${indent + 8}px` }}
+              className="border-l border-white/15 pl-2"
+            >
+              {renderTreeRows(node.id, depth + 1)}
+            </div>
           ) : null}
-        </React.Fragment>
+        </div>
       );
     });
   };
@@ -545,7 +568,7 @@ export default function GeneratorPage() {
               polyws Config Generator
             </h1>
             <p className="text-xs text-muted mt-1">
-              Build JSON/TOML config and visually plan nested folder/repo structure.
+              Planner-first config generation with live tree and live JSON/TOML output.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-wider">
@@ -567,77 +590,10 @@ export default function GeneratorPage() {
         <div className="grid grid-cols-1 xl:grid-cols-[1.2fr_1fr] gap-4">
           <section className="bg-surface/90 border border-white/15 rounded-2xl p-4 space-y-4">
             <div>
-              <div className="flex items-center justify-between mb-2">
-                <h2 className="text-primary text-xs uppercase tracking-[0.18em]">Projects</h2>
-                <button
-                  type="button"
-                  className="px-3 py-2 text-xs uppercase tracking-wider border border-white/25 rounded-lg hover:bg-white/5"
-                  onClick={() => setProjects((prev) => [...prev, emptyProject()])}
-                >
-                  Add Project
-                </button>
-              </div>
-              <p className="text-xs text-muted mb-2">
-                Use nested paths like <code className="text-cyan-300">apps/platform/core</code>.
-              </p>
-
-              <div className="space-y-3">
-                {projects.map((p, idx) => (
-                  <div key={idx} className="border border-white/15 rounded-xl p-3 bg-black/25">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-[11px] text-primary uppercase tracking-[0.14em]">
-                        Project #{idx + 1}
-                      </span>
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          className="px-2 py-1 text-[10px] uppercase border border-white/20 rounded hover:bg-white/5"
-                          onClick={() =>
-                            updateProject(idx, "path", normalizePath(slugify(p.name)))
-                          }
-                        >
-                          Path From Name
-                        </button>
-                        <button
-                          type="button"
-                          className="px-2 py-1 text-[10px] uppercase border border-tertiary/40 text-tertiary rounded hover:bg-tertiary/10"
-                          onClick={() => removeProject(idx)}
-                          disabled={projects.length === 1}
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                      {[
-                        ["name", "Name", "core"],
-                        ["path", "Path (nested)", "apps/platform/core"],
-                        ["url", "URL", "git@github.com:org/core.git"],
-                        ["branch", "Branch", "main"],
-                        ["dependsOnCsv", "depends_on (csv)", "core,plugins"],
-                        ["syncUrl", "sync_url (optional)", "git@gitlab.com:backup/core.git"],
-                        ["syncInterval", "sync_interval (optional)", "10"],
-                      ].map(([key, label, placeholder]) => (
-                        <label
-                          key={key}
-                          className="text-[11px] text-muted uppercase tracking-wider"
-                        >
-                          {label}
-                          <input
-                            className="mt-1 w-full bg-black/30 border border-white/15 rounded-lg px-3 py-2 text-sm"
-                            type={key === "syncInterval" ? "number" : "text"}
-                            min={key === "syncInterval" ? "1" : undefined}
-                            placeholder={placeholder}
-                            value={p[key]}
-                            onChange={(e) => updateProject(idx, key, e.target.value)}
-                          />
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <h2 className="text-primary text-xs uppercase tracking-[0.18em] mb-2">Tree Preview</h2>
+              <pre className="bg-black/70 border border-white/10 rounded-xl p-3 min-h-[180px] overflow-auto text-xs leading-6">
+                {treePreview}
+              </pre>
             </div>
 
             <div className="h-px bg-white/10" />
@@ -648,7 +604,7 @@ export default function GeneratorPage() {
                 <button
                   type="button"
                   className="px-2 py-1 text-[10px] uppercase border border-white/20 rounded hover:bg-white/5"
-                  onClick={startWorkspaceEditor}
+                  onClick={openWorkspaceEditor}
                 >
                   Open Editor
                 </button>
@@ -659,16 +615,15 @@ export default function GeneratorPage() {
                   <div className="min-w-0 flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={startWorkspaceEditor}
+                      onClick={openWorkspaceEditor}
                       className="text-primary hover:text-white"
                       title="Edit workspace"
                     >
                       <FolderOpen size={16} />
                     </button>
-                    <span className="text-sm text-foreground truncate">
-                      [{workspaceName || "workspace"}]
-                    </span>
+                    <span className="text-sm text-foreground truncate">[{workspaceName || "workspace"}]</span>
                   </div>
+
                   <div className="flex items-center gap-1">
                     <button
                       type="button"
@@ -680,7 +635,7 @@ export default function GeneratorPage() {
                     </button>
                     <button
                       type="button"
-                      onClick={startWorkspaceEditor}
+                      onClick={openWorkspaceEditor}
                       className="p-1 rounded border border-white/20 text-muted hover:text-white"
                       title="Edit workspace"
                     >
@@ -689,7 +644,7 @@ export default function GeneratorPage() {
                   </div>
                 </div>
 
-                <div className="mt-0.5 space-y-1">{renderTreeRows(null)}</div>
+                <div className="mt-0.5">{renderTreeRows(null)}</div>
               </div>
             </div>
 
@@ -763,6 +718,7 @@ export default function GeneratorPage() {
           <section className="space-y-4">
             <div className="bg-surface/90 border border-white/15 rounded-2xl p-4">
               <h2 className="text-primary text-xs uppercase tracking-[0.18em] mb-2">Generated Config</h2>
+
               <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-3">
                 <label className="text-[11px] text-muted uppercase tracking-wider md:col-span-1">
                   Output format
@@ -798,9 +754,11 @@ export default function GeneratorPage() {
                   </select>
                 </label>
               </div>
-              <pre className="bg-black/70 border border-white/10 rounded-xl p-3 min-h-[280px] overflow-auto text-xs leading-6">
+
+              <pre className="bg-black/70 border border-white/10 rounded-xl p-3 min-h-[300px] overflow-auto text-xs leading-6">
                 {output}
               </pre>
+
               <div className="flex flex-wrap gap-2 mt-3">
                 <button
                   type="button"
@@ -823,12 +781,12 @@ export default function GeneratorPage() {
 
               <div className="flex flex-wrap gap-2 mt-3">
                 <span className="px-2 py-1 text-[10px] uppercase tracking-wider border border-emerald-400/40 text-emerald-300 rounded-full">
-                  projects: {config.projects.length}
+                  repos: {plannerProjects.length}
                 </span>
                 <span className="px-2 py-1 text-[10px] uppercase tracking-wider border border-white/20 text-muted rounded-full">
                   planner nodes: {plannerNodes.length}
                 </span>
-                {warnings.map((msg) => (
+                {plannerWarnings.map((msg) => (
                   <span
                     key={msg}
                     className="px-2 py-1 text-[10px] uppercase tracking-wider border border-amber-400/40 text-amber-300 rounded-full"
@@ -840,18 +798,6 @@ export default function GeneratorPage() {
 
               <p className="text-[11px] text-muted mt-3 leading-5">
                 Valid config names: {FILE_NAMES.join(", ")}
-              </p>
-            </div>
-
-            <div className="bg-surface/90 border border-white/15 rounded-2xl p-4">
-              <h2 className="text-primary text-xs uppercase tracking-[0.18em] mb-2">Workspace Tree Preview</h2>
-              <pre className="bg-black/70 border border-white/10 rounded-xl p-3 min-h-[230px] overflow-auto text-xs leading-6">
-                {treePreview}
-              </pre>
-              <p className="text-[11px] text-muted mt-2 leading-5">
-                Example style: <code className="text-cyan-300">├── apps/</code>,{" "}
-                <code className="text-cyan-300">└── services/</code>, and repo tags like{" "}
-                <code className="text-cyan-300">[repo: project-1]</code>.
               </p>
             </div>
           </section>
@@ -891,7 +837,6 @@ export default function GeneratorPage() {
                       className="mt-1 w-full bg-black/30 border border-white/15 rounded-lg px-3 py-2 text-sm"
                       type="number"
                       min="1"
-                      placeholder="30"
                       value={defaultInterval}
                       onChange={(e) => setDefaultInterval(e.target.value)}
                     />
@@ -928,6 +873,7 @@ export default function GeneratorPage() {
                           repoName: e.target.value === "repo" ? prev.repoName || prev.name : "",
                           url: e.target.value === "repo" ? prev.url : "",
                           syncUrl: e.target.value === "repo" ? prev.syncUrl : "",
+                          branch: e.target.value === "repo" ? prev.branch || "main" : "main",
                         }))
                       }
                     >
@@ -948,16 +894,26 @@ export default function GeneratorPage() {
                   {nodeForm.kind === "repo" ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                       <label className="text-[11px] text-muted uppercase tracking-wider block">
-                        Repo label
+                        Project name
                         <input
                           className="mt-1 w-full bg-black/30 border border-white/15 rounded-lg px-3 py-2 text-sm"
                           value={nodeForm.repoName}
                           onChange={(e) =>
                             setNodeForm((prev) => ({ ...prev, repoName: e.target.value }))
                           }
+                          placeholder="core"
                         />
                       </label>
                       <label className="text-[11px] text-muted uppercase tracking-wider block">
+                        Branch
+                        <input
+                          className="mt-1 w-full bg-black/30 border border-white/15 rounded-lg px-3 py-2 text-sm"
+                          value={nodeForm.branch}
+                          onChange={(e) => setNodeForm((prev) => ({ ...prev, branch: e.target.value }))}
+                          placeholder="main"
+                        />
+                      </label>
+                      <label className="text-[11px] text-muted uppercase tracking-wider block md:col-span-2">
                         Remote repo URL
                         <input
                           className="mt-1 w-full bg-black/30 border border-white/15 rounded-lg px-3 py-2 text-sm"
@@ -989,7 +945,7 @@ export default function GeneratorPage() {
                     >
                       <option value="">[workspace root]</option>
                       {rootFolderOptions
-                        .filter((f) => f.id !== nodeForm.id)
+                        .filter((folder) => folder.id !== nodeForm.id)
                         .map((folder) => (
                           <option key={folder.id} value={folder.id}>
                             {folder.name}
@@ -1009,24 +965,23 @@ export default function GeneratorPage() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => {
-                        const current = plannerNodes.find((n) => n.id === selectedNodeId);
-                        if (!current) return;
-                        const parentId = current.kind === "folder" ? current.id : current.parentId;
-                        createNode(parentId || null, "folder");
-                      }}
+                      onClick={() => createChildNode("folder")}
                       className="inline-flex items-center gap-1 px-3 py-2 text-xs uppercase tracking-wider border border-white/20 rounded-lg hover:bg-white/5"
                     >
                       <PlusCircle size={14} />
-                      Add Nested Folder
+                      Add Child Folder
                     </button>
                     <button
                       type="button"
-                      onClick={() => {
-                        if (selectedNodeId) {
-                          deleteNode(selectedNodeId);
-                        }
-                      }}
+                      onClick={() => createChildNode("repo")}
+                      className="inline-flex items-center gap-1 px-3 py-2 text-xs uppercase tracking-wider border border-white/20 rounded-lg hover:bg-white/5"
+                    >
+                      <PlusCircle size={14} />
+                      Add Child Repo
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => selectedNodeId && deleteNode(selectedNodeId)}
                       className="inline-flex items-center gap-1 px-3 py-2 text-xs uppercase tracking-wider border border-tertiary/40 text-tertiary rounded-lg hover:bg-tertiary/10"
                     >
                       <Trash2 size={14} />

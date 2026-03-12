@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::path::Path;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Project {
@@ -56,24 +57,148 @@ pub struct WorkspaceConfig {
     pub vm: Option<VmConfig>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ConfigFormat {
+    Json,
+    Toml,
+}
+
+const CONFIG_CANDIDATES: [&str; 6] = [
+    ".polyws",
+    ".poly",
+    ".polyws.json",
+    ".poly.json",
+    ".polyws.toml",
+    ".poly.toml",
+];
+
+pub fn known_config_paths() -> &'static [&'static str] {
+    &CONFIG_CANDIDATES
+}
+
+pub fn find_existing_config_path() -> Option<&'static str> {
+    CONFIG_CANDIDATES
+        .iter()
+        .copied()
+        .find(|path| Path::new(path).is_file())
+}
+
+fn format_from_path(path: &str) -> Option<ConfigFormat> {
+    if path.ends_with(".json") {
+        Some(ConfigFormat::Json)
+    } else if path.ends_with(".toml") {
+        Some(ConfigFormat::Toml)
+    } else {
+        None
+    }
+}
+
+fn parse_with_format(content: &str, format: ConfigFormat) -> Result<WorkspaceConfig> {
+    match format {
+        ConfigFormat::Json => serde_json::from_str(content).context("invalid JSON"),
+        ConfigFormat::Toml => toml::from_str(content).context("invalid TOML"),
+    }
+}
+
+fn parse_workspace_config(path: &str, content: &str) -> Result<(WorkspaceConfig, ConfigFormat)> {
+    if let Some(format) = format_from_path(path) {
+        let cfg = parse_with_format(content, format)?;
+        return Ok((cfg, format));
+    }
+
+    if let Ok(cfg) = parse_with_format(content, ConfigFormat::Json) {
+        return Ok((cfg, ConfigFormat::Json));
+    }
+    if let Ok(cfg) = parse_with_format(content, ConfigFormat::Toml) {
+        return Ok((cfg, ConfigFormat::Toml));
+    }
+
+    anyhow::bail!("invalid config: expected JSON or TOML")
+}
+
+fn pick_default_save_target() -> Result<(&'static str, ConfigFormat)> {
+    const DEFAULT_TARGETS: [(&str, ConfigFormat); 6] = [
+        (".polyws", ConfigFormat::Json),
+        (".poly", ConfigFormat::Json),
+        (".polyws.json", ConfigFormat::Json),
+        (".poly.json", ConfigFormat::Json),
+        (".polyws.toml", ConfigFormat::Toml),
+        (".poly.toml", ConfigFormat::Toml),
+    ];
+
+    for (path, format) in DEFAULT_TARGETS {
+        let p = Path::new(path);
+        if !p.exists() || p.is_file() {
+            return Ok((path, format));
+        }
+    }
+
+    anyhow::bail!("could not determine a writable workspace config path")
+}
+
+fn pick_save_target() -> Result<(&'static str, ConfigFormat)> {
+    for path in CONFIG_CANDIDATES {
+        let p = Path::new(path);
+        if !p.is_file() {
+            continue;
+        }
+
+        if let Some(format) = format_from_path(path) {
+            return Ok((path, format));
+        }
+
+        // Extension-less file: keep whichever format it already uses.
+        let content = fs::read_to_string(path)
+            .with_context(|| format!("failed reading existing config '{}'", path))?;
+        let format = match parse_workspace_config(path, &content) {
+            Ok((_, format)) => format,
+            Err(_) => ConfigFormat::Json,
+        };
+        return Ok((path, format));
+    }
+
+    pick_default_save_target()
+}
+
 impl WorkspaceConfig {
     pub fn load() -> Result<Self> {
-        // Accept both .polyws and .poly
-        let content = fs::read_to_string(".polyws")
-            .or_else(|_| fs::read_to_string(".poly"))
-            .context("No .polyws or .poly found. Are you in a workspace directory?")?;
-        serde_json::from_str(&content).context("Failed to parse workspace config")
+        let mut parse_errors = Vec::new();
+
+        for path in CONFIG_CANDIDATES {
+            let p = Path::new(path);
+            if !p.exists() {
+                continue;
+            }
+            if !p.is_file() {
+                continue;
+            }
+
+            let content = fs::read_to_string(path)
+                .with_context(|| format!("failed reading workspace config '{}'", path))?;
+            match parse_workspace_config(path, &content) {
+                Ok((cfg, _)) => return Ok(cfg),
+                Err(e) => parse_errors.push(format!("{}: {}", path, e)),
+            }
+        }
+
+        if !parse_errors.is_empty() {
+            anyhow::bail!(
+                "Found workspace config file(s), but none were valid:\n{}",
+                parse_errors.join("\n")
+            );
+        }
+
+        anyhow::bail!(
+            "No workspace config found. Tried: {}",
+            CONFIG_CANDIDATES.join(", ")
+        )
     }
 
     pub fn save(&self) -> Result<()> {
-        let content = serde_json::to_string_pretty(self)?;
-        // Write to whichever file already exists, defaulting to .polyws
-        let path = if std::path::Path::new(".poly").exists()
-            && !std::path::Path::new(".polyws").exists()
-        {
-            ".poly"
-        } else {
-            ".polyws"
+        let (path, format) = pick_save_target()?;
+        let content = match format {
+            ConfigFormat::Json => serde_json::to_string_pretty(self)?,
+            ConfigFormat::Toml => toml::to_string_pretty(self)?,
         };
         fs::write(path, content)?;
         Ok(())
@@ -171,5 +296,48 @@ impl WorkspaceConfig {
             }
         }
         map
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_workspace_config, ConfigFormat};
+
+    #[test]
+    fn parses_json_from_extensionless_paths() {
+        let content = r#"{"name":"demo","projects":[]}"#;
+        let (cfg, format) = parse_workspace_config(".polyws", content).expect("json should parse");
+        assert_eq!(cfg.name, "demo");
+        assert_eq!(format, ConfigFormat::Json);
+    }
+
+    #[test]
+    fn parses_toml_from_extensionless_paths() {
+        let content = r#"name = "demo"
+projects = []
+"#;
+        let (cfg, format) = parse_workspace_config(".poly", content).expect("toml should parse");
+        assert_eq!(cfg.name, "demo");
+        assert_eq!(format, ConfigFormat::Toml);
+    }
+
+    #[test]
+    fn respects_explicit_toml_extension() {
+        let content = r#"name = "demo"
+projects = []
+"#;
+        let (cfg, format) =
+            parse_workspace_config(".polyws.toml", content).expect("toml should parse");
+        assert_eq!(cfg.name, "demo");
+        assert_eq!(format, ConfigFormat::Toml);
+    }
+
+    #[test]
+    fn respects_explicit_json_extension() {
+        let content = r#"{"name":"demo","projects":[]}"#;
+        let (cfg, format) =
+            parse_workspace_config(".poly.json", content).expect("json should parse");
+        assert_eq!(cfg.name, "demo");
+        assert_eq!(format, ConfigFormat::Json);
     }
 }

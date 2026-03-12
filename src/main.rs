@@ -70,7 +70,7 @@ async fn main() -> Result<()> {
                     .map_err(|e| anyhow::anyhow!("Could not load workspace config: {}", e))?;
                 let vm_cfg = cfg
                     .vm
-                    .ok_or_else(|| anyhow::anyhow!("No [vm] section in .polyws"))?;
+                    .ok_or_else(|| anyhow::anyhow!("No [vm] section in workspace config"))?;
 
                 match action {
                     cli::VmAction::Doctor => vm::doctor(&vm_cfg).await?,

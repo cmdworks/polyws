@@ -73,7 +73,7 @@ Windows: download the `.zip` from [Releases](https://github.com/cmdworks/polyws/
 ```bash
 cd my-workspace/
 polyws doctor              # validate environment (git, ssh, disk, internet)
-polyws init                # create .polyws
+polyws init                # create workspace config
 polyws add core git@github.com:org/core.git
 polyws add plugins git@github.com:org/plugins.git --depends-on core --sync-url git@gitlab.com:backup/plugins.git
 polyws pull                # safe clone / update all repos
@@ -84,7 +84,10 @@ polyws status              # branch + dirty-file count per repo
 
 ---
 
-## Configuration — `.polyws`
+## Configuration
+
+polyws accepts workspace config in JSON or TOML using any of these names:
+`.polyws`, `.poly`, `.polyws.json`, `.poly.json`, `.polyws.toml`, `.poly.toml`
 
 ```json
 {
@@ -144,7 +147,7 @@ polyws status              # branch + dirty-file count per repo
 
 | Command | Description |
 |---|---|
-| `polyws init` | Create `.polyws` in the current directory |
+| `polyws init` | Create a workspace config in the current directory |
 | `polyws add <name> <url>` | Add a project (`--branch`, `--depends-on`, `--sync-url`) |
 | `polyws remove <name>` | Remove a project |
 | `polyws list` | List all projects and branches |

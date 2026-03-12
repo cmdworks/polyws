@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::process::Command;
 
-use crate::config::{Project, WorkspaceConfig};
+use crate::config::{find_existing_config_path, Project, WorkspaceConfig};
 use crate::git;
 use crate::utils;
 
@@ -20,8 +20,8 @@ enum PullOutcome {
 fn init_inner() -> Result<String> {
     ensure_git_installed()?;
 
-    if Path::new(".polyws").exists() {
-        anyhow::bail!(".polyws already exists in this directory");
+    if let Some(path) = find_existing_config_path() {
+        anyhow::bail!("workspace config already exists: {}", path);
     }
 
     let name = std::env::current_dir()?

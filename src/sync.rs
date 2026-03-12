@@ -143,7 +143,8 @@ pub async fn run_daemon() -> Result<()> {
     let mut last_synced: HashMap<String, Instant> = HashMap::new();
 
     loop {
-        let config = WorkspaceConfig::load().context("Sync daemon: failed to load .polyws")?;
+        let config =
+            WorkspaceConfig::load().context("Sync daemon: failed to load workspace config")?;
         let default_interval = config.sync_interval_minutes.unwrap_or(30).max(1);
 
         for project in &config.projects {

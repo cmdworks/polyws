@@ -1,7 +1,7 @@
 use anyhow::Result;
 use std::process::Command;
 
-use crate::config::WorkspaceConfig;
+use crate::config::{find_existing_config_path, known_config_paths, WorkspaceConfig};
 use crate::utils;
 
 pub async fn run() -> Result<()> {
@@ -75,10 +75,11 @@ fn check_internet() {
 }
 
 fn check_workspace() {
-    let has_polyws = std::path::Path::new(".polyws").exists();
-    let has_poly = std::path::Path::new(".poly").exists();
-    if !has_polyws && !has_poly {
-        utils::print_warn("no .polyws or .poly found (not inside a workspace)");
+    if find_existing_config_path().is_none() {
+        utils::print_warn(&format!(
+            "no workspace config found (tried: {})",
+            known_config_paths().join(", ")
+        ));
         return;
     }
 

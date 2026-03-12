@@ -190,6 +190,10 @@ pub fn list() -> Result<()> {
 // ---------------------------------------------------------------------------
 
 pub fn pull(name: Option<String>, force: bool) -> Result<()> {
+    if utils::repo_lock_exists() {
+        utils::print_warn("Another git operation is running; waiting...");
+    }
+    let _lock = utils::acquire_repo_lock("pull")?;
     let config = WorkspaceConfig::load()?;
     let mut any_failed = false;
 
@@ -279,6 +283,10 @@ pub fn clone_repos(name: Option<String>, force: bool) -> Result<()> {
 // ---------------------------------------------------------------------------
 
 pub fn push(name: Option<String>) -> Result<()> {
+    if utils::repo_lock_exists() {
+        utils::print_warn("Another git operation is running; waiting...");
+    }
+    let _lock = utils::acquire_repo_lock("push")?;
     let config = WorkspaceConfig::load()?;
     let mut any_failed = false;
 

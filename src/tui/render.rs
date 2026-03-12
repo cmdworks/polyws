@@ -212,10 +212,7 @@ pub(super) fn draw(f: &mut Frame, app: &mut App) {
         };
         (format!(" {}", msg), style)
     } else if app.task_running {
-        let label = app
-            .task_label
-            .as_deref()
-            .unwrap_or("background task");
+        let label = app.task_label.as_deref().unwrap_or("background task");
         (
             format!(" Running: {} — see Logs tab", label),
             Style::default().fg(Color::Yellow),
@@ -670,6 +667,16 @@ fn draw_sync(f: &mut Frame, app: &App, area: Rect) {
         status_items.push(ListItem::new(
             " Linux/Windows: Download from https://mutagen.io",
         ));
+    }
+
+    if let Some(line) = crate::sync::last_log_line() {
+        let trimmed = line.trim();
+        if !trimmed.is_empty() {
+            status_items.push(ListItem::new(Line::from(vec![
+                Span::raw(" Last sync: "),
+                Span::styled(trimmed.to_string(), Style::default().fg(Color::DarkGray)),
+            ])));
+        }
     }
 
     let status_block = List::new(status_items).block(

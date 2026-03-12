@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::fs;
+use std::io::Write;
 use std::path::Path;
 use std::process::Command;
 use std::time::{Duration, Instant};
@@ -11,6 +12,7 @@ use crate::utils;
 
 const PID_FILE: &str = ".polyws/sync.pid";
 const POLYWS_DIR: &str = ".polyws";
+const SYNC_LOG: &str = ".polyws/sync.log";
 
 // ---------------------------------------------------------------------------
 // start / stop / status
@@ -95,6 +97,9 @@ pub fn status() -> Result<()> {
     } else {
         utils::print_warn("Sync daemon is not running");
     }
+    if let Some(line) = last_log_line() {
+        println!("Last sync: {}", line);
+    }
     Ok(())
 }
 
@@ -103,6 +108,7 @@ pub fn status() -> Result<()> {
 // ---------------------------------------------------------------------------
 
 pub fn sync_now() -> Result<()> {
+    let _lock = utils::acquire_repo_lock("sync-now")?;
     let config = WorkspaceConfig::load()?;
     let mut synced = 0usize;
 
@@ -113,15 +119,23 @@ pub fn sync_now() -> Result<()> {
         };
         let path = Path::new(project.local_dir());
         if !path.exists() {
-            utils::print_warn(&format!("'{}' not found, skipping", project.name));
+            let msg = format!("'{}' not found, skipping", project.name);
+            utils::print_warn(&msg);
+            log_sync_line(&format!("sync: {}", msg));
             continue;
         }
-        match git::push_mirror(path, sync_url) {
+        match git::push_sync_branch(path, &project.branch, sync_url) {
             Ok(_) => {
-                utils::print_ok(&format!("{} → {}", project.name, sync_url));
+                let msg = format!("{} → {}", project.name, sync_url);
+                utils::print_ok(&msg);
+                log_sync_line(&format!("sync: {}", msg));
                 synced += 1;
             }
-            Err(e) => utils::print_fail(&format!("{}: {}", project.name, e)),
+            Err(e) => {
+                let msg = format!("{}: {}", project.name, e);
+                utils::print_fail(&msg);
+                log_sync_line(&format!("sync: {}", msg));
+            }
         }
     }
 
@@ -145,7 +159,42 @@ pub async fn run_daemon() -> Result<()> {
     loop {
         let config =
             WorkspaceConfig::load().context("Sync daemon: failed to load workspace config")?;
-        let default_interval = config.sync_interval_minutes.unwrap_or(30).max(1);
+        let default_interval = config.sync_interval_minutes.unwrap_or(5).max(1);
+
+        let mut any_due = false;
+        for project in &config.projects {
+            if project.sync_url.is_none() {
+                continue;
+            }
+            let interval_minutes = project.sync_interval.unwrap_or(default_interval).max(1);
+            let is_due = last_synced
+                .get(&project.name)
+                .map(|last| last.elapsed() >= Duration::from_secs(interval_minutes * 60))
+                .unwrap_or(true);
+            if is_due {
+                any_due = true;
+                break;
+            }
+        }
+
+        if !any_due {
+            tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
+            continue;
+        }
+
+        let mut warned = false;
+        let lock = loop {
+            match utils::try_acquire_repo_lock("sync-daemon")? {
+                Some(lock) => break lock,
+                None => {
+                    if !warned {
+                        log_sync_line("sync: waiting for other git operations");
+                        warned = true;
+                    }
+                    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                }
+            }
+        };
 
         for project in &config.projects {
             let sync_url = match &project.sync_url {
@@ -165,7 +214,7 @@ pub async fn run_daemon() -> Result<()> {
 
             let path = Path::new(project.local_dir());
             if !path.exists() {
-                utils::print_warn(&format!(
+                log_sync_line(&format!(
                     "sync: '{}' not found, skipping this interval",
                     project.name
                 ));
@@ -173,14 +222,15 @@ pub async fn run_daemon() -> Result<()> {
                 continue;
             }
 
-            match git::push_mirror(path, sync_url) {
-                Ok(_) => utils::print_ok(&format!("sync: {} → {}", project.name, sync_url)),
-                Err(e) => utils::print_fail(&format!("sync: {}: {}", project.name, e)),
+            match git::push_sync_branch(path, &project.branch, sync_url) {
+                Ok(_) => log_sync_line(&format!("sync: {} → {}", project.name, sync_url)),
+                Err(e) => log_sync_line(&format!("sync: {}: {}", project.name, e)),
             }
 
             last_synced.insert(project.name.clone(), Instant::now());
         }
 
+        drop(lock);
         tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
     }
 }
@@ -191,6 +241,11 @@ pub async fn run_daemon() -> Result<()> {
 
 pub fn is_mutagen_installed() -> bool {
     Command::new("mutagen").arg("version").output().is_ok()
+}
+
+pub fn last_log_line() -> Option<String> {
+    let content = fs::read_to_string(SYNC_LOG).ok()?;
+    content.lines().last().map(|s| s.to_string())
 }
 
 /// Non-fallible helper for the TUI — returns `false` on any error.
@@ -231,5 +286,16 @@ fn is_running() -> Result<bool> {
     {
         let _ = pid;
         Ok(false)
+    }
+}
+
+fn log_sync_line(line: &str) {
+    let _ = fs::create_dir_all(POLYWS_DIR);
+    if let Ok(mut file) = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(SYNC_LOG)
+    {
+        let _ = writeln!(file, "{}", line);
     }
 }

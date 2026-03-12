@@ -86,11 +86,7 @@ pub fn init_repo_in_dir(url: &str, branch: &str, path: &Path) -> Result<()> {
         .unwrap_or(false);
 
     if !remote_exists {
-        anyhow::bail!(
-            "remote branch '{}' not found for {}",
-            branch,
-            url
-        );
+        anyhow::bail!("remote branch '{}' not found for {}", branch, url);
     }
 
     let checkout = Command::new("git")
@@ -271,6 +267,159 @@ pub fn push_repo(path: &Path, branch: &str) -> Result<()> {
     Ok(())
 }
 
+/// Push a dedicated `sync` branch to the given sync remote.
+/// The sync branch is recreated from the base branch and includes uncommitted
+/// local changes (committed with a standard message).
+pub fn push_sync_branch(path: &Path, base_branch: &str, sync_url: &str) -> Result<()> {
+    let head_branch = current_branch(path)?;
+    let head_commit = rev_parse(path, "HEAD")?;
+    let base_ref = if ref_exists(path, &format!("refs/heads/{}", base_branch)) {
+        base_branch.to_string()
+    } else if ref_exists(path, &format!("refs/remotes/origin/{}", base_branch)) {
+        format!("origin/{}", base_branch)
+    } else {
+        return Err(anyhow::anyhow!(
+            "base branch '{}' not found (local or origin)",
+            base_branch
+        ));
+    };
+
+    let dirty = is_worktree_dirty(path)?;
+    let mut stashed = false;
+
+    if dirty {
+        let stash = Command::new("git")
+            .args(["stash", "push", "-u", "-m", "polyws sync"])
+            .current_dir(path)
+            .output()
+            .context("Failed to run git stash")?;
+        if !stash.status.success() {
+            anyhow::bail!(
+                "git stash failed in {}: {}",
+                path.display(),
+                summarize_git_failure(&stash)
+            );
+        }
+        stashed = true;
+    }
+
+    let sync_result = (|| -> Result<()> {
+        let checkout = Command::new("git")
+            .args(["checkout", "-B", "sync", &base_ref])
+            .current_dir(path)
+            .output()
+            .context("Failed to checkout sync branch")?;
+        if !checkout.status.success() {
+            anyhow::bail!(
+                "git checkout sync failed in {}: {}",
+                path.display(),
+                summarize_git_failure(&checkout)
+            );
+        }
+
+        if stashed {
+            let apply = Command::new("git")
+                .args(["stash", "apply"])
+                .current_dir(path)
+                .output()
+                .context("Failed to apply stash")?;
+            if !apply.status.success() {
+                anyhow::bail!(
+                    "git stash apply failed in {}: {}",
+                    path.display(),
+                    summarize_git_failure(&apply)
+                );
+            }
+        }
+
+        if is_worktree_dirty(path)? {
+            let add = Command::new("git")
+                .args(["add", "-A"])
+                .current_dir(path)
+                .output()
+                .context("Failed to run git add -A")?;
+            if !add.status.success() {
+                anyhow::bail!(
+                    "git add failed in {}: {}",
+                    path.display(),
+                    summarize_git_failure(&add)
+                );
+            }
+
+            let commit = Command::new("git")
+                .args(["commit", "-m", "polyws sync"])
+                .current_dir(path)
+                .output()
+                .context("Failed to run git commit")?;
+            if !commit.status.success() {
+                anyhow::bail!(
+                    "git commit failed in {}: {}",
+                    path.display(),
+                    summarize_git_failure(&commit)
+                );
+            }
+        }
+
+        let push = Command::new("git")
+            .args(["push", "--force", sync_url, "sync:sync"])
+            .current_dir(path)
+            .output()
+            .context("Failed to run git push for sync")?;
+        if !push.status.success() {
+            anyhow::bail!(
+                "git push sync failed for {}: {}",
+                sync_url,
+                summarize_git_failure(&push)
+            );
+        }
+
+        Ok(())
+    })();
+
+    let mut cleanup_errors = Vec::new();
+
+    let checkout_back = if head_branch == "HEAD" {
+        Command::new("git")
+            .args(["checkout", "--detach", &head_commit])
+            .current_dir(path)
+            .output()
+    } else {
+        Command::new("git")
+            .args(["checkout", &head_branch])
+            .current_dir(path)
+            .output()
+    }
+    .context("Failed to restore original branch")?;
+    if !checkout_back.status.success() {
+        cleanup_errors.push(format!(
+            "restore branch failed: {}",
+            summarize_git_failure(&checkout_back)
+        ));
+    }
+
+    if stashed {
+        let pop = Command::new("git")
+            .args(["stash", "pop"])
+            .current_dir(path)
+            .output()
+            .context("Failed to pop stash")?;
+        if !pop.status.success() {
+            cleanup_errors.push(format!("stash pop failed: {}", summarize_git_failure(&pop)));
+        }
+    }
+
+    if !cleanup_errors.is_empty() {
+        let cleanup = cleanup_errors.join("; ");
+        if let Err(err) = sync_result {
+            anyhow::bail!("sync failed: {} | cleanup failed: {}", err, cleanup);
+        } else {
+            anyhow::bail!("sync cleanup failed: {}", cleanup);
+        }
+    }
+
+    sync_result
+}
+
 fn hard_reset_to(path: &Path, remote_ref: &str) -> Result<()> {
     let reset = Command::new("git")
         .args(["reset", "--hard", remote_ref])
@@ -295,6 +444,48 @@ fn is_worktree_dirty(path: &Path) -> Result<bool> {
     Ok(!String::from_utf8_lossy(&out.stdout).trim().is_empty())
 }
 
+fn current_branch(path: &Path) -> Result<String> {
+    let output = Command::new("git")
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .current_dir(path)
+        .output()
+        .context("Failed to read current branch")?;
+    if !output.status.success() {
+        anyhow::bail!(
+            "git rev-parse HEAD failed in {}: {}",
+            path.display(),
+            summarize_git_failure(&output)
+        );
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+fn rev_parse(path: &Path, rev: &str) -> Result<String> {
+    let output = Command::new("git")
+        .args(["rev-parse", rev])
+        .current_dir(path)
+        .output()
+        .context("Failed to run git rev-parse")?;
+    if !output.status.success() {
+        anyhow::bail!(
+            "git rev-parse {} failed in {}: {}",
+            rev,
+            path.display(),
+            summarize_git_failure(&output)
+        );
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+fn ref_exists(path: &Path, reference: &str) -> bool {
+    Command::new("git")
+        .args(["rev-parse", "--verify", reference])
+        .current_dir(path)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
 /// Return the abbreviated HEAD commit hash (7 chars) for the repo at `path`.
 pub fn get_commit_hash(path: &Path) -> Result<String> {
     let repo = Repository::open(path)
@@ -316,23 +507,6 @@ pub fn checkout_commit(path: &Path, hash: &str) -> Result<()> {
         .with_context(|| format!("Commit '{}' not found", hash))?;
     repo.reset(&obj, ResetType::Hard, None)
         .with_context(|| format!("Failed to reset to '{}'", hash))?;
-    Ok(())
-}
-
-/// Push all refs to `mirror_url` using `git push --mirror`.
-pub fn push_mirror(path: &Path, mirror_url: &str) -> Result<()> {
-    let output = Command::new("git")
-        .args(["push", "--mirror", mirror_url])
-        .current_dir(path)
-        .output()
-        .context("Failed to run git push --mirror")?;
-    if !output.status.success() {
-        anyhow::bail!(
-            "git push --mirror failed for {}: {}",
-            mirror_url,
-            summarize_git_failure(&output)
-        );
-    }
     Ok(())
 }
 

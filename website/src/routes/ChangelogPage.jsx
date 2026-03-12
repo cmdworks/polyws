@@ -11,6 +11,7 @@ const ENTRIES = [
       "TUI pull runs in the background with live log streaming.",
       "Workspace root repo supported via path '.' with safe in-place init.",
       "Generator: planner-only workflow with live tree and config output.",
+      "Sync daemon now uses a dedicated sync branch with auto-commit and serialized git operations.",
     ],
   },
   {

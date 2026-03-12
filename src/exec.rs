@@ -11,6 +11,10 @@ use crate::utils;
 /// Projects in the same dependency level run in parallel via rayon.
 /// Each level is fully complete before the next level starts.
 pub async fn run(cmd: String) -> Result<()> {
+    if utils::repo_lock_exists() {
+        utils::print_warn("Another git operation is running; waiting...");
+    }
+    let _lock = utils::acquire_repo_lock("exec")?;
     let config = WorkspaceConfig::load()?;
 
     if config.projects.is_empty() {

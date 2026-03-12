@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use ratatui::widgets::TableState;
 
 use crate::config::{normalize_local_dir, Project, WorkspaceConfig};
-use crate::{git, snapshot, sync as sync_mod};
+use crate::{git, snapshot, sync as sync_mod, utils};
 
 use super::helpers::list_snap_files;
 use super::types::{AddForm, Tab};
@@ -178,7 +178,11 @@ impl App {
         if let Some(p) = self.selected_project() {
             let project = p.clone();
             self.start_pull_task(
-                if force { "pull-selected --force".to_string() } else { "pull-selected".to_string() },
+                if force {
+                    "pull-selected --force".to_string()
+                } else {
+                    "pull-selected".to_string()
+                },
                 project.name.clone(),
                 move || vec![project],
                 force,
@@ -293,6 +297,29 @@ impl App {
         thread::spawn(move || {
             let projects = projects_fn();
             let _ = tx.send(TaskMsg::Log(format!("-- {} --", display)));
+            let mut warned = false;
+            let lock = loop {
+                match utils::try_acquire_repo_lock("tui-pull") {
+                    Ok(Some(lock)) => break lock,
+                    Ok(None) => {
+                        if !warned {
+                            let _ = tx.send(TaskMsg::Log(
+                                "⚠ waiting for other git operations to finish...".to_string(),
+                            ));
+                            warned = true;
+                        }
+                        thread::sleep(Duration::from_millis(500));
+                    }
+                    Err(e) => {
+                        let _ = tx.send(TaskMsg::Log(format!("✘ failed to acquire lock: {}", e)));
+                        let _ = tx.send(TaskMsg::Done {
+                            ok: false,
+                            msg: "pull failed (lock error)".to_string(),
+                        });
+                        return;
+                    }
+                }
+            };
             let mut any_failed = false;
 
             for p in projects {
@@ -320,12 +347,16 @@ impl App {
                 }
             }
 
+            drop(lock);
             let msg = if any_failed {
                 format!("{} finished with errors", label)
             } else {
                 format!("{} complete", label)
             };
-            let _ = tx.send(TaskMsg::Done { ok: !any_failed, msg });
+            let _ = tx.send(TaskMsg::Done {
+                ok: !any_failed,
+                msg,
+            });
         });
     }
 
@@ -354,6 +385,29 @@ impl App {
         thread::spawn(move || {
             let levels = cfg.execution_levels().unwrap_or_default();
             let _ = tx.send(TaskMsg::Log(format!("-- {} --", display)));
+            let mut warned = false;
+            let lock = loop {
+                match utils::try_acquire_repo_lock("tui-push") {
+                    Ok(Some(lock)) => break lock,
+                    Ok(None) => {
+                        if !warned {
+                            let _ = tx.send(TaskMsg::Log(
+                                "⚠ waiting for other git operations to finish...".to_string(),
+                            ));
+                            warned = true;
+                        }
+                        thread::sleep(Duration::from_millis(500));
+                    }
+                    Err(e) => {
+                        let _ = tx.send(TaskMsg::Log(format!("✘ failed to acquire lock: {}", e)));
+                        let _ = tx.send(TaskMsg::Done {
+                            ok: false,
+                            msg: "push failed (lock error)".to_string(),
+                        });
+                        return;
+                    }
+                }
+            };
             let mut any_failed = false;
 
             for (level_idx, level) in levels.into_iter().enumerate() {
@@ -377,10 +431,7 @@ impl App {
                     }
                     if !git::is_repo(path) {
                         any_failed = true;
-                        let _ = tx.send(TaskMsg::Log(format!(
-                            "✘ {}: not a git repo",
-                            p.name
-                        )));
+                        let _ = tx.send(TaskMsg::Log(format!("✘ {}: not a git repo", p.name)));
                         continue;
                     }
 
@@ -402,9 +453,7 @@ impl App {
                             Ok(false) => {}
                             Err(e) => {
                                 any_failed = true;
-                                let _ = tx.send(TaskMsg::Log(format!(
-                                    "✘ {}: {}", p.name, e
-                                )));
+                                let _ = tx.send(TaskMsg::Log(format!("✘ {}: {}", p.name, e)));
                                 continue;
                             }
                         }
@@ -429,12 +478,16 @@ impl App {
                 }
             }
 
+            drop(lock);
             let msg = if any_failed {
                 format!("{} finished with errors", label)
             } else {
                 format!("{} complete", label)
             };
-            let _ = tx.send(TaskMsg::Done { ok: !any_failed, msg });
+            let _ = tx.send(TaskMsg::Done {
+                ok: !any_failed,
+                msg,
+            });
         });
     }
 

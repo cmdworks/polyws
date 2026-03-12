@@ -1,3 +1,100 @@
+use anyhow::{Context, Result};
+use std::fs::{self, OpenOptions};
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::thread;
+use std::time::Duration;
+
+const GIT_LOCK_FILE: &str = ".polyws/git.lock";
+
+pub struct RepoLock {
+    path: PathBuf,
+}
+
+impl Drop for RepoLock {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+    }
+}
+
+pub fn repo_lock_exists() -> bool {
+    Path::new(GIT_LOCK_FILE).exists()
+}
+
+pub fn try_acquire_repo_lock(label: &str) -> Result<Option<RepoLock>> {
+    fs::create_dir_all(".polyws").context("Failed to create .polyws directory")?;
+
+    match OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(GIT_LOCK_FILE)
+    {
+        Ok(mut file) => {
+            let _ = writeln!(file, "pid={}", std::process::id());
+            let _ = writeln!(file, "label={}", label);
+            Ok(Some(RepoLock {
+                path: PathBuf::from(GIT_LOCK_FILE),
+            }))
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            if let Some(pid) = read_lock_pid() {
+                if !is_pid_alive(pid) {
+                    let _ = fs::remove_file(GIT_LOCK_FILE);
+                    return try_acquire_repo_lock(label);
+                }
+            }
+            Ok(None)
+        }
+        Err(e) => Err(e).context("Failed to create git lock file"),
+    }
+}
+
+pub fn acquire_repo_lock(label: &str) -> Result<RepoLock> {
+    loop {
+        if let Some(lock) = try_acquire_repo_lock(label)? {
+            return Ok(lock);
+        }
+        thread::sleep(Duration::from_millis(500));
+    }
+}
+
+fn read_lock_pid() -> Option<u32> {
+    let content = fs::read_to_string(GIT_LOCK_FILE).ok()?;
+    for line in content.lines() {
+        if let Some(rest) = line.strip_prefix("pid=") {
+            if let Ok(pid) = rest.trim().parse::<u32>() {
+                return Some(pid);
+            }
+        }
+    }
+    None
+}
+
+fn is_pid_alive(pid: u32) -> bool {
+    #[cfg(unix)]
+    {
+        Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
+    #[cfg(windows)]
+    {
+        Command::new("tasklist")
+            .args(["/FI", &format!("PID eq {}", pid), "/NH"])
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).contains(&pid.to_string()))
+            .unwrap_or(false)
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = pid;
+        false
+    }
+}
+
 /// Print a success line with a green checkmark.
 pub fn print_ok(msg: &str) {
     println!("  \x1b[32m✔\x1b[0m {}", msg);

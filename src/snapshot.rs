@@ -94,6 +94,15 @@ pub fn restore(file: &str, dry_run: bool, yes: bool) -> Result<()> {
         }
     }
 
+    let _lock = if dry_run {
+        None
+    } else {
+        if utils::repo_lock_exists() {
+            utils::print_warn("Another git operation is running; waiting...");
+        }
+        Some(utils::acquire_repo_lock("snapshot-restore")?)
+    };
+
     let cfg = WorkspaceConfig::load().ok();
 
     for (name, hash) in &snapshot.commits {

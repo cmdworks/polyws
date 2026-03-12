@@ -83,6 +83,15 @@ const FIELD_LABELS: [&str; 6] = [
     "Depends On",
 ];
 
+const FIELD_HINTS: [&str; 6] = [
+    "required",
+    "nested/path (optional)",
+    "git@host:org/repo.git",
+    "main",
+    "optional mirror url",
+    "comma-separated project names",
+];
+
 // ─────────────────────────────────────────────────────────
 // App state
 // ─────────────────────────────────────────────────────────
@@ -1570,30 +1579,37 @@ fn draw_add_form(f: &mut Frame, app: &App, area: Rect) {
         let border_color = if is_focused {
             Color::Yellow
         } else {
-            Color::DarkGray
+            Color::Gray
         };
-        let value = &app.add_form.fields[i];
-        let display = if is_focused {
-            format!("{}_", value)
-        } else if i == 3 && value.is_empty() {
-            "main".to_string()
+        let value = app.add_form.fields[i].trim_end();
+
+        let (display, text_style) = if is_focused {
+            (
+                format!("{}_", value),
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            )
+        } else if value.is_empty() {
+            (
+                FIELD_HINTS[i].to_string(),
+                Style::default().fg(Color::DarkGray),
+            )
         } else {
-            value.clone()
+            (value.to_string(), Style::default().fg(Color::White))
         };
+
         let field = Paragraph::new(display)
             .block(
                 Block::default()
-                    .title(format!(" {} ", label))
+                    .title(Line::from(Span::styled(
+                        format!(" {} ", label),
+                        Style::default().fg(border_color),
+                    )))
                     .borders(Borders::ALL)
                     .border_style(Style::default().fg(border_color)),
             )
-            .style(if is_focused {
-                Style::default()
-                    .fg(Color::White)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(Color::White)
-            });
+            .style(text_style);
         if i < inner.len() {
             f.render_widget(field, inner[i]);
         }

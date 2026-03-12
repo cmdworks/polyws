@@ -1559,7 +1559,7 @@ fn draw_log(f: &mut Frame, app: &App, area: Rect) {
 // ─────────────────────────────────────────────────────────
 
 fn draw_add_form(f: &mut Frame, app: &App, area: Rect) {
-    let popup_area = centered_rect(72, 72, area);
+    let popup_area = centered_rect(74, 84, area);
     f.render_widget(Clear, popup_area);
 
     let block = Block::default()
@@ -1571,7 +1571,7 @@ fn draw_add_form(f: &mut Frame, app: &App, area: Rect) {
     let inner = Layout::default()
         .direction(Direction::Vertical)
         .margin(2)
-        .constraints(vec![Constraint::Length(3); FIELD_LABELS.len()])
+        .constraints(vec![Constraint::Length(4); FIELD_LABELS.len()])
         .split(popup_area);
 
     for (i, label) in FIELD_LABELS.iter().enumerate() {
@@ -1585,7 +1585,7 @@ fn draw_add_form(f: &mut Frame, app: &App, area: Rect) {
 
         let (display, text_style) = if is_focused {
             (
-                format!("{}_", value),
+                format!("{}|", value),
                 Style::default()
                     .fg(Color::White)
                     .add_modifier(Modifier::BOLD),

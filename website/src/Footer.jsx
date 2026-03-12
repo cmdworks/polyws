@@ -7,6 +7,7 @@ export default function Footer() {
     const base = import.meta.env.BASE_URL;
     const generatorUrl = `${base}generet`;
     const docsUrl = `${base}docs`;
+    const changelogUrl = `${base}changelog`;
     const isHome = location.pathname === "/";
     const sectionHref = (id) => (isHome ? `#${id}` : `${base}#${id}`);
 
@@ -30,6 +31,7 @@ export default function Footer() {
                     <a href={sectionHref("config")} className="hover:text-primary transition-colors">Config</a>
                     <a href={generatorUrl} className="hover:text-primary transition-colors">Generet</a>
                     <a href={docsUrl} className="hover:text-primary transition-colors">Docs</a>
+                    <a href={changelogUrl} className="hover:text-primary transition-colors">Changelog</a>
                     <a href={sectionHref("install")} className="hover:text-primary transition-colors">Install</a>
                     <a href="https://github.com/cmdworks/polyws" target="_blank" rel="noopener" className="text-white hover:text-tertiary transition-colors flex items-center gap-1">
                         GitHub

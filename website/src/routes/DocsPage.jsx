@@ -98,6 +98,12 @@ export default function DocsPage() {
             >
               Config Generator
             </Link>
+            <Link
+              to="/changelog"
+              className="px-3 py-2 border border-primary/30 rounded-lg hover:bg-primary/10 transition"
+            >
+              Changelog
+            </Link>
             <a
               href={docsUrl}
               className="px-3 py-2 bg-gradient-primary text-black rounded-lg font-semibold"

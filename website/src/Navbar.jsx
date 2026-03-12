@@ -7,6 +7,7 @@ export default function Navbar() {
     const base = import.meta.env.BASE_URL;
     const generatorUrl = `${base}generet`;
     const docsUrl = `${base}docs`;
+    const changelogUrl = `${base}changelog`;
     const isHome = location.pathname === "/";
     const sectionHref = (id) => (isHome ? `#${id}` : `${base}#${id}`);
 
@@ -25,6 +26,7 @@ export default function Navbar() {
                 <a href={sectionHref("config")} className="text-muted hover:text-white transition-colors">config</a>
                 <a href={generatorUrl} className="text-muted hover:text-white transition-colors">generet</a>
                 <a href={docsUrl} className="text-muted hover:text-white transition-colors">docs</a>
+                <a href={changelogUrl} className="text-muted hover:text-white transition-colors">changelog</a>
             </div>
 
             {/* Actions */}

@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>polyws</title>
+    <script>
+      (function () {
+        var l = window.location
+        var path = l.pathname + l.search + l.hash
+        sessionStorage.setItem('polyws_spa_redirect', path)
+        l.replace('/polyws/')
+      })()
+    </script>
+  </head>
+  <body></body>
+</html>

@@ -17,6 +17,15 @@
     rel="stylesheet">
 
   <title>Polyws | The Future of Work</title>
+  <script>
+    (function () {
+      var redirect = sessionStorage.getItem('polyws_spa_redirect')
+      if (!redirect) return
+      sessionStorage.removeItem('polyws_spa_redirect')
+      if (!redirect.startsWith('/polyws')) return
+      history.replaceState(null, '', redirect)
+    })()
+  </script>
 </head>
 
 <body>

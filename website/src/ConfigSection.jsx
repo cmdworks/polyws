@@ -1,7 +1,8 @@
 import React from "react";
 
 export default function ConfigSection() {
-    const generatorUrl = `${import.meta.env.BASE_URL}generet/`;
+    const generatorUrl = `${import.meta.env.BASE_URL}generet`;
+    const docsUrl = `${import.meta.env.BASE_URL}docs`;
 
     return (
         <section id="config" className="py-24 md:py-32 relative bg-surface">
@@ -21,12 +22,20 @@ export default function ConfigSection() {
                     Valid names: .polyws, .poly, .polyws.json, .poly.json, .polyws.toml, .poly.toml
                 </p>
                 <div className="mt-6">
-                    <a
-                        href={generatorUrl}
-                        className="inline-flex items-center justify-center px-6 py-3 text-sm font-body font-semibold text-white uppercase tracking-wider bg-gradient-primary rounded-full shadow-glow-primary hover:shadow-glow-primary-hover hover:-translate-y-0.5 transition-all"
-                    >
-                        Open Config Generator
-                    </a>
+                    <div className="flex flex-col sm:flex-row gap-3 items-center justify-center">
+                        <a
+                            href={generatorUrl}
+                            className="inline-flex items-center justify-center px-6 py-3 text-sm font-body font-semibold text-white uppercase tracking-wider bg-gradient-primary rounded-full shadow-glow-primary hover:shadow-glow-primary-hover hover:-translate-y-0.5 transition-all"
+                        >
+                            Open Config Generator
+                        </a>
+                        <a
+                            href={docsUrl}
+                            className="inline-flex items-center justify-center px-6 py-3 text-sm font-body font-semibold text-foreground uppercase tracking-wider border border-white/20 rounded-full hover:bg-white/5 hover:border-white/40 transition-all"
+                        >
+                            Open Docs
+                        </a>
+                    </div>
                 </div>
             </div>
             

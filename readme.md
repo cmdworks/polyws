@@ -17,6 +17,8 @@
 > Built while developing the [Rove ecosystem](https://github.com/rovehq/core) — a polyrepo setup where multiple projects live side-by-side. Existing tools fell short, so **polyws** was born: a single binary that orchestrates many repos as one unified workspace.
 
 Website: [https://cmdworks.github.io/polyws/](https://cmdworks.github.io/polyws/) (deployed via GitHub Pages CI)
+Docs: [https://cmdworks.github.io/polyws/docs](https://cmdworks.github.io/polyws/docs)
+Contributions welcome: [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ## Install
 
@@ -89,7 +91,9 @@ polyws status              # branch + dirty-file count per repo
 polyws accepts workspace config in JSON or TOML using any of these names:
 `.polyws`, `.poly`, `.polyws.json`, `.poly.json`, `.polyws.toml`, `.poly.toml`
 
-Config generator page: [https://cmdworks.github.io/polyws/generet/](https://cmdworks.github.io/polyws/generet/)
+Config generator page: [https://cmdworks.github.io/polyws/generet](https://cmdworks.github.io/polyws/generet)
+Docs page: [https://cmdworks.github.io/polyws/docs](https://cmdworks.github.io/polyws/docs)
+Repository docs: [docs/README.md](docs/README.md)
 
 ```json
 {
@@ -256,6 +260,12 @@ src/
 | `git2` | Libgit2 bindings |
 | `chrono` | Snapshot timestamps |
 | `anyhow` | Error handling |
+
+---
+
+## Contributing
+
+Contributions are welcome. Please follow the guide in [CONTRIBUTING.md](CONTRIBUTING.md) for setup, checks, and PR workflow.
 
 ---
 

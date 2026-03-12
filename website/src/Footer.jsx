@@ -1,8 +1,14 @@
 import React from "react";
+import { useLocation } from "react-router-dom";
 import logoUrl from "./assets/polyws_logo.min.png";
 
 export default function Footer() {
-    const generatorUrl = `${import.meta.env.BASE_URL}generet/`;
+    const location = useLocation();
+    const base = import.meta.env.BASE_URL;
+    const generatorUrl = `${base}generet`;
+    const docsUrl = `${base}docs`;
+    const isHome = location.pathname === "/";
+    const sectionHref = (id) => (isHome ? `#${id}` : `${base}#${id}`);
 
     return (
         <footer className="footer mt-20 py-12 border-t border-white/10 bg-[#030304] relative overflow-hidden">
@@ -18,12 +24,13 @@ export default function Footer() {
                 </div>
                 
                 <nav className="flex flex-wrap gap-x-8 gap-y-4 text-xs font-mono uppercase tracking-widest text-muted" aria-label="Footer navigation">
-                    <a href="#features" className="hover:text-primary transition-colors">Features</a>
-                    <a href="#commands" className="hover:text-primary transition-colors">Commands</a>
-                    <a href="#tui" className="hover:text-primary transition-colors">TUI</a>
-                    <a href="#config" className="hover:text-primary transition-colors">Config</a>
+                    <a href={sectionHref("features")} className="hover:text-primary transition-colors">Features</a>
+                    <a href={sectionHref("commands")} className="hover:text-primary transition-colors">Commands</a>
+                    <a href={sectionHref("tui")} className="hover:text-primary transition-colors">TUI</a>
+                    <a href={sectionHref("config")} className="hover:text-primary transition-colors">Config</a>
                     <a href={generatorUrl} className="hover:text-primary transition-colors">Generet</a>
-                    <a href="#install" className="hover:text-primary transition-colors">Install</a>
+                    <a href={docsUrl} className="hover:text-primary transition-colors">Docs</a>
+                    <a href={sectionHref("install")} className="hover:text-primary transition-colors">Install</a>
                     <a href="https://github.com/cmdworks/polyws" target="_blank" rel="noopener" className="text-white hover:text-tertiary transition-colors flex items-center gap-1">
                         GitHub
                         <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">

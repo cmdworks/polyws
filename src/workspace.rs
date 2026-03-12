@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
 use rayon::prelude::*;
 use std::collections::HashMap;
-use std::path::Path;
 use std::fs;
+use std::path::Path;
 use std::process::Command;
 
 use crate::config::{find_existing_config_path, normalize_local_dir, Project, WorkspaceConfig};
@@ -255,10 +255,8 @@ fn run_pull_for_project(project: &Project, force: bool) -> Result<PullOutcome> {
             git::clone_repo(&project.url, path)?;
             return Ok(PullOutcome::Cloned);
         }
-        anyhow::bail!(
-            "'{}' exists but is not a git repository",
-            project.local_dir()
-        );
+        git::init_repo_in_dir(&project.url, &project.branch, path)?;
+        return Ok(PullOutcome::Cloned);
     }
 
     git::clone_repo(&project.url, path)?;

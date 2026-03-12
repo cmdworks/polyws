@@ -19,6 +19,96 @@ pub fn clone_repo(url: &str, path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Initialize an existing directory as a git repo and sync from origin.
+/// Useful when the target directory already exists (e.g. workspace root).
+pub fn init_repo_in_dir(url: &str, branch: &str, path: &Path) -> Result<()> {
+    let init = Command::new("git")
+        .args(["init"])
+        .current_dir(path)
+        .output()
+        .context("Failed to run git init")?;
+    if !init.status.success() {
+        anyhow::bail!(
+            "git init failed in {}: {}",
+            path.display(),
+            summarize_git_failure(&init)
+        );
+    }
+
+    // Ensure origin points to the right URL (add or set).
+    let origin_ok = Command::new("git")
+        .args(["remote", "get-url", "origin"])
+        .current_dir(path)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+
+    let remote_cmd = if origin_ok {
+        Command::new("git")
+            .args(["remote", "set-url", "origin", url])
+            .current_dir(path)
+            .output()
+    } else {
+        Command::new("git")
+            .args(["remote", "add", "origin", url])
+            .current_dir(path)
+            .output()
+    }
+    .context("Failed to configure git remote")?;
+
+    if !remote_cmd.status.success() {
+        anyhow::bail!(
+            "git remote setup failed in {}: {}",
+            path.display(),
+            summarize_git_failure(&remote_cmd)
+        );
+    }
+
+    let fetch = Command::new("git")
+        .args(["fetch", "--all", "--prune"])
+        .current_dir(path)
+        .output()
+        .context("Failed to run git fetch")?;
+    if !fetch.status.success() {
+        anyhow::bail!(
+            "git fetch failed in {}: {}",
+            path.display(),
+            summarize_git_failure(&fetch)
+        );
+    }
+
+    let remote_ref = format!("origin/{}", branch);
+    let remote_exists = Command::new("git")
+        .args(["rev-parse", "--verify", &remote_ref])
+        .current_dir(path)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+
+    if !remote_exists {
+        anyhow::bail!(
+            "remote branch '{}' not found for {}",
+            branch,
+            url
+        );
+    }
+
+    let checkout = Command::new("git")
+        .args(["checkout", "-B", branch, &remote_ref])
+        .current_dir(path)
+        .output()
+        .context("Failed to run git checkout")?;
+    if !checkout.status.success() {
+        anyhow::bail!(
+            "git checkout failed in {}: {}",
+            path.display(),
+            summarize_git_failure(&checkout)
+        );
+    }
+
+    Ok(())
+}
+
 /// Fetch all remotes then update the given branch for the repo at `path`.
 ///
 /// Strategy:

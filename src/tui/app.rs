@@ -1,8 +1,7 @@
-use std::path::Path;
 use std::fs;
+use std::path::Path;
 use std::time::{Duration, Instant};
 
-use anyhow::anyhow;
 use ratatui::widgets::TableState;
 
 use crate::config::{normalize_local_dir, Project, WorkspaceConfig};
@@ -130,10 +129,7 @@ impl App {
                 } else if is_dir_empty(path) {
                     git::clone_repo(&url, path)
                 } else {
-                    Err(anyhow!(
-                        "'{}' exists but is not a git repository",
-                        local_dir
-                    ))
+                    git::init_repo_in_dir(&url, &branch, path)
                 }
             } else {
                 git::clone_repo(&url, path)
@@ -182,17 +178,17 @@ impl App {
                 return;
             }
             if !Path::new(&local_dir).exists() {
-                self.set_status(
-                    format!("Local copy for '{}' not found", name),
-                    true,
-                );
+                self.set_status(format!("Local copy for '{}' not found", name), true);
                 return;
             }
             self.confirm_delete = true;
             self.confirm_delete_name = Some(name.clone());
             self.confirm_delete_path = Some(local_dir);
             self.set_status(
-                format!("Delete local copy of '{}' ? Press y to confirm, n/Esc to cancel", name),
+                format!(
+                    "Delete local copy of '{}' ? Press y to confirm, n/Esc to cancel",
+                    name
+                ),
                 true,
             );
         }
@@ -341,10 +337,7 @@ impl App {
                     } else if is_dir_empty(path) {
                         git::clone_repo(&p.url, path)
                     } else {
-                        Err(anyhow!(
-                            "'{}' exists but is not a git repository",
-                            p.local_dir()
-                        ))
+                        git::init_repo_in_dir(&p.url, &p.branch, path)
                     }
                 } else {
                     git::clone_repo(&p.url, path)

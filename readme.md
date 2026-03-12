@@ -6,11 +6,11 @@
 
 **Polyrepo Workspace Orchestrator**
 <p align="center">
-[![CI](https://img.shields.io/github/actions/workflow/status/cmdworks/polyws/ci.yml?style=for-the-badge&logo=github&color=00D2FF)](https://github.com/cmdworks/polyws/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/cmdworks/polyws?style=for-the-badge&logo=github&color=805AD7)](https://github.com/cmdworks/polyws/releases/latest)
-[![License](https://img.shields.io/badge/license-MIT-FF42A1?style=for-the-badge)](LICENSE)
-[![Built with Rust](https://img.shields.io/badge/built%20with-Rust-3A7BD5?style=for-the-badge&logo=rust)](https://www.rust-lang.org)
-[![Website](https://img.shields.io/badge/Website-GitHub%20Pages-00A7E1?style=for-the-badge&logo=githubpages&logoColor=white)](https://cmdworks.github.io/polyws/)
+  <a href="https://github.com/cmdworks/polyws/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/cmdworks/polyws/ci.yml?style=for-the-badge&logo=github&color=00D2FF" /></a>
+  <a href="https://github.com/cmdworks/polyws/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/cmdworks/polyws?style=for-the-badge&logo=github&color=805AD7" /></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-FF42A1?style=for-the-badge" /></a>
+  <a href="https://www.rust-lang.org"><img alt="Built with Rust" src="https://img.shields.io/badge/built%20with-Rust-3A7BD5?style=for-the-badge&logo=rust" /></a>
+  <a href="https://cmdworks.github.io/polyws/"><img alt="Website" src="https://img.shields.io/badge/Website-GitHub%20Pages-00A7E1?style=for-the-badge&logo=githubpages&logoColor=white" /></a>
 </p>
 ---
 

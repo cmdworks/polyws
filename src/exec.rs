@@ -42,7 +42,7 @@ pub async fn run(cmd: String) -> Result<()> {
         let results: Vec<(String, Result<()>)> = level
             .par_iter()
             .map(|proj| {
-                let result = run_in_project(&proj.name, &cmd);
+                let result = run_in_project(&proj.name, proj.local_dir(), &cmd);
                 (proj.name.clone(), result)
             })
             .collect();
@@ -65,10 +65,14 @@ pub async fn run(cmd: String) -> Result<()> {
     Ok(())
 }
 
-fn run_in_project(name: &str, cmd: &str) -> Result<()> {
-    let path = Path::new(name);
+fn run_in_project(name: &str, dir: &str, cmd: &str) -> Result<()> {
+    let path = Path::new(dir);
     if !path.exists() {
-        anyhow::bail!("directory '{}' not found — run `polyws pull` first", name);
+        anyhow::bail!(
+            "directory '{}' for project '{}' not found — run `polyws pull` first",
+            dir,
+            name
+        );
     }
 
     let status = if cfg!(windows) {
@@ -83,7 +87,7 @@ fn run_in_project(name: &str, cmd: &str) -> Result<()> {
             .current_dir(path)
             .status()
     }
-    .map_err(|e| anyhow::anyhow!("Failed to spawn command in '{}': {}", name, e))?;
+    .map_err(|e| anyhow::anyhow!("Failed to spawn command in '{}': {}", dir, e))?;
 
     if !status.success() {
         anyhow::bail!("command exited with status {}", status.code().unwrap_or(-1));

@@ -68,11 +68,18 @@ impl Tab {
 
 #[derive(Default, Clone)]
 struct AddForm {
-    fields: [String; 5], // name, url, branch, sync_url, depends_on
+    fields: [String; 6], // name, path, url, branch, sync_url, depends_on
     focused: usize,      // which field
 }
 
-const FIELD_LABELS: [&str; 5] = ["Name", "URL", "Branch", "Sync URL", "Depends On"];
+const FIELD_LABELS: [&str; 6] = [
+    "Name",
+    "Path (optional)",
+    "URL",
+    "Branch",
+    "Sync URL",
+    "Depends On",
+];
 
 // ─────────────────────────────────────────────────────────
 // App state
@@ -143,7 +150,7 @@ impl App {
                 .projects
                 .iter()
                 .map(|p| {
-                    let path = Path::new(&p.name);
+                    let path = Path::new(p.local_dir());
                     if !path.exists() {
                         "\x1b[31mmissing\x1b[0m".to_string()
                     } else {
@@ -170,7 +177,8 @@ impl App {
             let name = p.name.clone();
             let url = p.url.clone();
             let branch = p.branch.clone();
-            let path = Path::new(&name);
+            let local_dir = p.local_dir().to_string();
+            let path = Path::new(&local_dir);
             let res = if path.exists() {
                 git::pull_repo(path, &branch, false)
             } else {
@@ -209,9 +217,17 @@ impl App {
 
     fn submit_add_form(&mut self) {
         let name = self.add_form.fields[0].trim().to_string();
-        let url = self.add_form.fields[1].trim().to_string();
+        let path = {
+            let p = self.add_form.fields[1].trim().to_string();
+            if p.is_empty() || p == name {
+                None
+            } else {
+                Some(p)
+            }
+        };
+        let url = self.add_form.fields[2].trim().to_string();
         let branch = {
-            let b = self.add_form.fields[2].trim().to_string();
+            let b = self.add_form.fields[3].trim().to_string();
             if b.is_empty() {
                 "main".to_string()
             } else {
@@ -219,7 +235,7 @@ impl App {
             }
         };
         let sync_url = {
-            let s = self.add_form.fields[3].trim().to_string();
+            let s = self.add_form.fields[4].trim().to_string();
             if s.is_empty() {
                 None
             } else {
@@ -227,7 +243,7 @@ impl App {
             }
         };
         let depends_on: Option<Vec<String>> = {
-            let d = self.add_form.fields[4].trim().to_string();
+            let d = self.add_form.fields[5].trim().to_string();
             if d.is_empty() {
                 None
             } else {
@@ -245,8 +261,24 @@ impl App {
                 self.set_status(format!("'{}' already exists", name), true);
                 return;
             }
+            let requested_dir = path.as_deref().unwrap_or(&name);
+            if Path::new(requested_dir).is_absolute() {
+                self.set_status(
+                    "project path must be relative to workspace root".to_string(),
+                    true,
+                );
+                return;
+            }
+            if cfg.projects.iter().any(|p| p.local_dir() == requested_dir) {
+                self.set_status(
+                    format!("project path '{}' is already used", requested_dir),
+                    true,
+                );
+                return;
+            }
             cfg.projects.push(Project {
                 name: name.clone(),
+                path,
                 url,
                 branch,
                 depends_on,
@@ -275,7 +307,7 @@ impl App {
         self.log_lines.clear();
         if let Some(cfg) = self.config.clone() {
             for p in &cfg.projects {
-                let path = Path::new(&p.name);
+                let path = Path::new(p.local_dir());
                 let res = if path.exists() {
                     git::pull_repo(path, &p.branch, false)
                 } else {
@@ -379,7 +411,7 @@ impl App {
             self.log_lines
                 .push(format!("✔ workspace '{}' loaded", cfg.name));
             for p in &cfg.projects {
-                let path = Path::new(&p.name);
+                let path = Path::new(p.local_dir());
                 if git::is_repo(path) {
                     self.log_lines.push(format!("✔ repo '{}' present", p.name));
                 } else if path.exists() {
@@ -533,10 +565,11 @@ fn handle_key(app: &mut App, code: KeyCode, mods: KeyModifiers) -> bool {
     if app.show_add_form {
         match code {
             KeyCode::Tab => {
-                app.add_form.focused = (app.add_form.focused + 1) % 5;
+                app.add_form.focused = (app.add_form.focused + 1) % FIELD_LABELS.len();
             }
             KeyCode::BackTab => {
-                app.add_form.focused = (app.add_form.focused + 4) % 5;
+                app.add_form.focused =
+                    (app.add_form.focused + FIELD_LABELS.len() - 1) % FIELD_LABELS.len();
             }
             KeyCode::Enter => app.submit_add_form(),
             KeyCode::Backspace => {
@@ -643,7 +676,7 @@ fn handle_key(app: &mut App, code: KeyCode, mods: KeyModifiers) -> bool {
             KeyCode::Char('a') => {
                 app.show_add_form = true;
                 app.add_form = AddForm::default();
-                app.add_form.fields[2] = "main".to_string();
+                app.add_form.fields[3] = "main".to_string();
             }
             KeyCode::Char('d') | KeyCode::Delete => app.remove_selected(),
             KeyCode::Char('p') | KeyCode::Enter => app.pull_selected(),
@@ -713,7 +746,7 @@ fn run_exec_cmd(app: &mut App, cmd: &str) {
             let results: Vec<(String, Result<std::process::Output, std::io::Error>)> = level
                 .par_iter()
                 .map(|proj| {
-                    let path = std::path::Path::new(&proj.name);
+                    let path = std::path::Path::new(proj.local_dir());
                     if !path.exists() {
                         return (
                             proj.name.clone(),
@@ -1121,9 +1154,14 @@ fn draw_projects(f: &mut Frame, app: &mut App, area: Rect) {
                     }
                 })
                 .unwrap_or_else(|| "—".to_string());
+            let display_name = if p.local_dir() != p.name {
+                format!("{} ({})", p.name, p.local_dir())
+            } else {
+                p.name.clone()
+            };
 
             Row::new(vec![
-                Cell::from(p.name.clone()),
+                Cell::from(display_name),
                 Cell::from(p.branch.clone()).style(Style::default().fg(Color::Cyan)),
                 Cell::from(status).style(Style::default().fg(status_color)),
                 Cell::from(deps).style(Style::default().fg(Color::Magenta)),
@@ -1466,7 +1504,7 @@ fn draw_log(f: &mut Frame, app: &App, area: Rect) {
 // ─────────────────────────────────────────────────────────
 
 fn draw_add_form(f: &mut Frame, app: &App, area: Rect) {
-    let popup_area = centered_rect(60, 60, area);
+    let popup_area = centered_rect(72, 72, area);
     f.render_widget(Clear, popup_area);
 
     let block = Block::default()
@@ -1478,7 +1516,7 @@ fn draw_add_form(f: &mut Frame, app: &App, area: Rect) {
     let inner = Layout::default()
         .direction(Direction::Vertical)
         .margin(2)
-        .constraints(vec![Constraint::Length(3); 5])
+        .constraints(vec![Constraint::Length(3); FIELD_LABELS.len()])
         .split(popup_area);
 
     for (i, label) in FIELD_LABELS.iter().enumerate() {
@@ -1501,11 +1539,14 @@ fn draw_add_form(f: &mut Frame, app: &App, area: Rect) {
                     .borders(Borders::ALL)
                     .border_style(Style::default().fg(border_color)),
             )
-            .style(Style::default().fg(if is_focused {
-                Color::White
+            .style(if is_focused {
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
             } else {
-                Color::DarkGray
-            }));
+                Style::default().fg(Color::White)
+            });
         if i < inner.len() {
             f.render_widget(field, inner[i]);
         }

@@ -1,17 +1,21 @@
 use anyhow::{Context, Result};
 use git2::{Repository, ResetType};
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Output};
 
 /// Clone a repository from `url` into `path`.
 pub fn clone_repo(url: &str, path: &Path) -> Result<()> {
     println!("  Cloning {} → {}", url, path.display());
-    let status = Command::new("git")
+    let output = Command::new("git")
         .args(["clone", url, &path.to_string_lossy()])
-        .status()
+        .output()
         .context("Failed to run git clone")?;
-    if !status.success() {
-        anyhow::bail!("git clone failed for {}", url);
+    if !output.status.success() {
+        anyhow::bail!(
+            "git clone failed for {}: {}",
+            url,
+            summarize_git_failure(&output)
+        );
     }
     Ok(())
 }
@@ -29,10 +33,14 @@ pub fn pull_repo(path: &Path, branch: &str, force: bool) -> Result<()> {
     let fetch = Command::new("git")
         .args(["fetch", "--all", "--prune"])
         .current_dir(path)
-        .status()
+        .output()
         .context("Failed to run git fetch")?;
-    if !fetch.success() {
-        anyhow::bail!("git fetch failed in {}", path.display());
+    if !fetch.status.success() {
+        anyhow::bail!(
+            "git fetch failed in {}: {}",
+            path.display(),
+            summarize_git_failure(&fetch)
+        );
     }
 
     let remote_ref = format!("origin/{}", branch);
@@ -85,12 +93,13 @@ pub fn pull_repo(path: &Path, branch: &str, force: bool) -> Result<()> {
                 let ff_merge = Command::new("git")
                     .args(["merge", "--ff-only", &remote_ref])
                     .current_dir(path)
-                    .status()
+                    .output()
                     .context("Failed to run git merge --ff-only")?;
-                if !ff_merge.success() {
+                if !ff_merge.status.success() {
                     anyhow::bail!(
-                        "fast-forward merge failed for '{}'; rerun with --force to hard reset to {}",
+                        "fast-forward merge failed for '{}': {}. Rerun with --force to hard reset to {}",
                         path.display(),
+                        summarize_git_failure(&ff_merge),
                         remote_ref
                     );
                 }
@@ -119,13 +128,17 @@ pub fn pull_repo(path: &Path, branch: &str, force: bool) -> Result<()> {
 
 /// Push the local branch to origin for the repo at `path`.
 pub fn push_repo(path: &Path, branch: &str) -> Result<()> {
-    let status = Command::new("git")
+    let output = Command::new("git")
         .args(["push", "origin", branch])
         .current_dir(path)
-        .status()
+        .output()
         .context("Failed to run git push")?;
-    if !status.success() {
-        anyhow::bail!("git push origin {} failed", branch);
+    if !output.status.success() {
+        anyhow::bail!(
+            "git push origin {} failed: {}",
+            branch,
+            summarize_git_failure(&output)
+        );
     }
     Ok(())
 }
@@ -180,15 +193,67 @@ pub fn checkout_commit(path: &Path, hash: &str) -> Result<()> {
 
 /// Push all refs to `mirror_url` using `git push --mirror`.
 pub fn push_mirror(path: &Path, mirror_url: &str) -> Result<()> {
-    let status = Command::new("git")
+    let output = Command::new("git")
         .args(["push", "--mirror", mirror_url])
         .current_dir(path)
-        .status()
+        .output()
         .context("Failed to run git push --mirror")?;
-    if !status.success() {
-        anyhow::bail!("git push --mirror failed for {}", mirror_url);
+    if !output.status.success() {
+        anyhow::bail!(
+            "git push --mirror failed for {}: {}",
+            mirror_url,
+            summarize_git_failure(&output)
+        );
     }
     Ok(())
+}
+
+fn summarize_git_failure(output: &Output) -> String {
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let mut message = if !stderr.is_empty() {
+        stderr
+    } else if !stdout.is_empty() {
+        stdout
+    } else {
+        format!(
+            "git exited with status {}",
+            output.status.code().unwrap_or(-1)
+        )
+    };
+
+    if let Some(hint) = classify_git_hint(&message) {
+        message.push_str(" | Hint: ");
+        message.push_str(hint);
+    }
+    message
+}
+
+fn classify_git_hint(message: &str) -> Option<&'static str> {
+    let lower = message.to_ascii_lowercase();
+    if lower.contains("permission denied (publickey)") {
+        return Some(
+            "SSH auth failed. Check your SSH key, ssh-agent, and host alias in ~/.ssh/config.",
+        );
+    }
+    if lower.contains("authentication failed") {
+        return Some("Authentication failed. Verify HTTPS credentials/token or SSH key access.");
+    }
+    if lower.contains("repository not found") {
+        return Some(
+            "Repository was not found or access is missing. Verify repo URL and permissions.",
+        );
+    }
+    if lower.contains("could not resolve host")
+        || lower.contains("name or service not known")
+        || lower.contains("temporary failure in name resolution")
+    {
+        return Some("Host lookup failed. Check repository URL/host alias and network DNS.");
+    }
+    if lower.contains("connection timed out") || lower.contains("connection refused") {
+        return Some("Connection failed. Check network/VPN/firewall and remote availability.");
+    }
+    None
 }
 
 /// Returns a human-readable status string for the repo at `path`.

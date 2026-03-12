@@ -97,7 +97,7 @@ fn check_workspace() {
 
 fn check_repos(cfg: &WorkspaceConfig) {
     for project in &cfg.projects {
-        let path = std::path::Path::new(&project.name);
+        let path = std::path::Path::new(project.local_dir());
         if crate::git::is_repo(path) {
             utils::print_ok(&format!("repo '{}' present", project.name));
         } else if path.exists() {

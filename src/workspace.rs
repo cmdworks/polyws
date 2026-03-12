@@ -18,6 +18,8 @@ enum PullOutcome {
 // ---------------------------------------------------------------------------
 
 fn init_inner() -> Result<String> {
+    ensure_git_installed()?;
+
     if Path::new(".polyws").exists() {
         anyhow::bail!(".polyws already exists in this directory");
     }
@@ -38,6 +40,20 @@ fn init_inner() -> Result<String> {
     Ok(name)
 }
 
+fn ensure_git_installed() -> Result<()> {
+    let ok = Command::new("git")
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    if !ok {
+        anyhow::bail!(
+            "git is required but was not found. Install git first, then run `polyws init` again."
+        );
+    }
+    Ok(())
+}
+
 pub fn init() -> Result<()> {
     let name = init_inner()?;
     println!("Initialized workspace '{}'", name);
@@ -56,15 +72,33 @@ pub fn init_silent() -> Result<String> {
 
 pub fn add(
     name: String,
+    path: Option<String>,
     url: String,
     branch: String,
     depends_on: Vec<String>,
     sync_url: Option<String>,
 ) -> Result<()> {
     let mut config = WorkspaceConfig::load()?;
+    let path = path
+        .map(|p| p.trim().to_string())
+        .filter(|p| !p.is_empty() && p != &name);
 
     if config.projects.iter().any(|p| p.name == name) {
         anyhow::bail!("Project '{}' already exists in the workspace", name);
+    }
+    if let Some(ref pth) = path {
+        if Path::new(pth).is_absolute() {
+            anyhow::bail!("Project path must be relative to workspace root");
+        }
+        if config.projects.iter().any(|p| p.local_dir() == pth) {
+            anyhow::bail!("Project path '{}' is already used by another project", pth);
+        }
+    } else if config
+        .projects
+        .iter()
+        .any(|p| p.local_dir() == name.as_str())
+    {
+        anyhow::bail!("Project path '{}' is already used by another project", name);
     }
 
     if depends_on.iter().any(|dep| dep == &name) {
@@ -81,6 +115,7 @@ pub fn add(
 
     config.projects.push(Project {
         name: name.clone(),
+        path,
         url,
         branch,
         depends_on: if depends_on.is_empty() {
@@ -127,15 +162,16 @@ pub fn list() -> Result<()> {
                 .filter(|d| !d.is_empty())
                 .map(|d| d.join(", "))
                 .unwrap_or_else(|| "—".to_string());
+            let path = p.local_dir().to_string();
             let mirror = p.sync_url.as_deref().unwrap_or("—").to_string();
-            vec![p.name.clone(), p.branch.clone(), deps, mirror]
+            vec![p.name.clone(), path, p.branch.clone(), deps, mirror]
         })
         .collect();
 
     utils::print_table(
-        &["Name", "Branch", "Depends On", "Mirror URL"],
+        &["Name", "Path", "Branch", "Depends On", "Mirror URL"],
         &rows,
-        &["", "36", "35", "2"],
+        &["", "", "36", "35", "2"],
     );
     Ok(())
 }
@@ -200,7 +236,7 @@ pub fn pull(name: Option<String>, force: bool) -> Result<()> {
 }
 
 fn run_pull_for_project(project: &Project, force: bool) -> Result<PullOutcome> {
-    let path = Path::new(&project.name);
+    let path = Path::new(project.local_dir());
     if path.exists() {
         git::pull_repo(path, &project.branch, force)?;
         Ok(PullOutcome::Updated)
@@ -273,11 +309,11 @@ pub fn push(name: Option<String>) -> Result<()> {
 }
 
 fn run_push_for_project(project: &Project) -> Result<()> {
-    let path = Path::new(&project.name);
+    let path = Path::new(project.local_dir());
     if !path.exists() {
         anyhow::bail!(
             "directory '{}' not found — run `polyws pull` first",
-            project.name
+            project.local_dir()
         );
     }
     git::push_repo(path, &project.branch)
@@ -295,7 +331,7 @@ pub fn status() -> Result<()> {
         .projects
         .iter()
         .map(|project| {
-            let path = Path::new(&project.name);
+            let path = Path::new(project.local_dir());
             let (status_text, _) = if path.exists() {
                 match git::repo_status(path) {
                     Ok(s) => (s, false),
@@ -380,10 +416,14 @@ pub fn repair() -> Result<()> {
     println!("Repairing workspace '\x1b[1m{}\x1b[0m'...", config.name);
 
     for project in &config.projects {
-        let path = Path::new(&project.name);
+        let path = Path::new(project.local_dir());
 
         if !path.exists() {
-            utils::print_info(&format!("Re-cloning missing repository: {}", project.name));
+            utils::print_info(&format!(
+                "Re-cloning missing repository: {} ({})",
+                project.name,
+                project.local_dir()
+            ));
             match git::clone_repo(&project.url, path) {
                 Ok(_) => utils::print_ok(&format!("{} cloned", project.name)),
                 Err(e) => utils::print_fail(&format!("Failed to clone {}: {}", project.name, e)),
@@ -393,8 +433,9 @@ pub fn repair() -> Result<()> {
 
         if !git::is_repo(path) {
             utils::print_fail(&format!(
-                "'{}' exists but is not a git repository",
-                project.name
+                "'{}' ({}) exists but is not a git repository",
+                project.name,
+                project.local_dir()
             ));
             utils::print_info("Remove the directory and run `polyws repair` again to reclone.");
             continue;

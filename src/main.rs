@@ -25,11 +25,12 @@ async fn main() -> Result<()> {
             cli::Commands::Init => workspace::init()?,
             cli::Commands::Add {
                 name,
+                path,
                 url,
                 branch,
                 depends_on,
                 sync_url,
-            } => workspace::add(name, url, branch, depends_on, sync_url)?,
+            } => workspace::add(name, path, url, branch, depends_on, sync_url)?,
             cli::Commands::Remove { name } => workspace::remove(&name)?,
             cli::Commands::List => workspace::list()?,
             cli::Commands::Pull { name, force } => workspace::pull(name, force)?,

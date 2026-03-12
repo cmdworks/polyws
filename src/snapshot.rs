@@ -30,7 +30,7 @@ pub fn create() -> Result<()> {
 
     // Iterate in dependency order so the snapshot output is deterministic.
     for project in config.topological_order()? {
-        let path = Path::new(&project.name);
+        let path = Path::new(project.local_dir());
         if path.exists() {
             match git::get_commit_hash(path) {
                 Ok(hash) => {
@@ -94,10 +94,21 @@ pub fn restore(file: &str, dry_run: bool, yes: bool) -> Result<()> {
         }
     }
 
+    let cfg = WorkspaceConfig::load().ok();
+
     for (name, hash) in &snapshot.commits {
-        let path = Path::new(name.as_str());
+        let path_str = cfg
+            .as_ref()
+            .and_then(|c| c.find_project(name))
+            .map(|p| p.local_dir())
+            .unwrap_or(name.as_str());
+        let path = Path::new(path_str);
         if !path.exists() {
-            utils::print_warn(&format!("'{}' not found, skipping", name));
+            utils::print_warn(&format!(
+                "'{}' ({}) not found, skipping",
+                name,
+                path.display()
+            ));
             continue;
         }
 

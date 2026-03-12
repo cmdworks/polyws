@@ -111,7 +111,7 @@ pub fn sync_now() -> Result<()> {
             Some(u) => u,
             None => continue,
         };
-        let path = Path::new(&project.name);
+        let path = Path::new(project.local_dir());
         if !path.exists() {
             utils::print_warn(&format!("'{}' not found, skipping", project.name));
             continue;
@@ -162,7 +162,7 @@ pub async fn run_daemon() -> Result<()> {
                 continue;
             }
 
-            let path = Path::new(&project.name);
+            let path = Path::new(project.local_dir());
             if !path.exists() {
                 utils::print_warn(&format!(
                     "sync: '{}' not found, skipping this interval",

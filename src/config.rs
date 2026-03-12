@@ -6,6 +6,8 @@ use std::fs;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Project {
     pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
     pub url: String,
     #[serde(default = "default_branch")]
     pub branch: String,
@@ -15,6 +17,14 @@ pub struct Project {
     pub sync_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sync_interval: Option<u64>,
+}
+
+impl Project {
+    /// Local directory for this project, relative to workspace root.
+    /// Falls back to `name` for backward compatibility.
+    pub fn local_dir(&self) -> &str {
+        self.path.as_deref().unwrap_or(&self.name)
+    }
 }
 
 fn default_branch() -> String {

@@ -14,8 +14,11 @@ pub enum Commands {
     Init,
     /// Add a project repository to the workspace
     Add {
-        /// Project name (also the local directory name)
+        /// Project name (identifier used in dependencies)
         name: String,
+        /// Local directory path relative to workspace root (defaults to name)
+        #[arg(long)]
+        path: Option<String>,
         /// Git clone URL
         url: String,
         /// Branch to track

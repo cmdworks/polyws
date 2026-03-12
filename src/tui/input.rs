@@ -91,6 +91,7 @@ fn handle_global_key(app: &mut App, code: KeyCode, mods: KeyModifiers) -> bool {
         KeyCode::Char('h') | KeyCode::Char('H') => {
             app.show_help = !app.show_help;
         }
+        KeyCode::Char('a') | KeyCode::Char('A') => app.open_add_form(),
         KeyCode::Char('q') | KeyCode::Char('Q') => return true,
         KeyCode::Char('c') if mods.contains(KeyModifiers::CONTROL) => return true,
 
@@ -148,11 +149,6 @@ fn handle_tab_key(app: &mut App, code: KeyCode) {
             KeyCode::Down | KeyCode::Char('j') => {
                 let n = project_count(app);
                 move_down(&mut app.table_state, n);
-            }
-            KeyCode::Char('a') => {
-                app.show_add_form = true;
-                app.add_form = Default::default();
-                app.add_form.fields[3] = "main".to_string();
             }
             KeyCode::Char('d') | KeyCode::Delete => app.remove_selected(),
             KeyCode::Char('p') | KeyCode::Enter => app.pull_selected(),

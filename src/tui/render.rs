@@ -161,9 +161,9 @@ pub(super) fn draw(f: &mut Frame, app: &mut App) {
         match app.tab {
             Tab::Dashboard => {
                 if compact_hints {
-                    "p:Pull s:Snap d:Doc r:Reload Tab q"
+                    "a:Add p:Pull s:Snap d:Doc r:Reload Tab q"
                 } else {
-                    "p:Pull-all s:Snapshot d:Doctor r:Reload Tab:Switch q:Quit"
+                    "a:Add p:Pull-all s:Snapshot d:Doctor r:Reload Tab:Switch q:Quit"
                 }
             }
             Tab::Projects => {
@@ -175,30 +175,30 @@ pub(super) fn draw(f: &mut Frame, app: &mut App) {
             }
             Tab::Graph => {
                 if compact_hints {
-                    "r:Reload Tab q"
+                    "a:Add r:Reload Tab q"
                 } else {
-                    "r:Reload Tab:Switch q:Quit"
+                    "a:Add project r:Reload Tab:Switch q:Quit"
                 }
             }
             Tab::Snapshots => {
                 if compact_hints {
-                    "c:Create r/↵:Restore ↑↓:Move q"
+                    "a:Add c:Create r/↵:Restore ↑↓:Move q"
                 } else {
-                    "c:Create ↵/r:Restore ↑↓:Move q:Quit"
+                    "a:Add c:Create ↵/r:Restore ↑↓:Move q:Quit"
                 }
             }
             Tab::Sync => {
                 if compact_hints {
-                    "s:Start/Stop n:Now r q"
+                    "a:Add s:Start/Stop n:Now r q"
                 } else {
-                    "s:Start/Stop n:SyncNow r:Reload q:Quit"
+                    "a:Add s:Start/Stop n:SyncNow r:Reload q:Quit"
                 }
             }
             Tab::Logs => {
                 if compact_hints {
-                    "d:RunDoctor r q"
+                    "a:Add d:RunDoctor r q"
                 } else {
-                    "d:Run Doctor r:Reload q:Quit"
+                    "a:Add d:Run Doctor r:Reload q:Quit"
                 }
             }
         }
@@ -244,6 +244,7 @@ fn draw_help(f: &mut Frame, area: Rect) {
             Style::default().add_modifier(Modifier::BOLD),
         )]),
         Line::from("   1-6 / Tab     : Switch tabs"),
+        Line::from("   a             : Add project (any tab)"),
         Line::from("   h             : Toggle help"),
         Line::from("   r             : Reload config"),
         Line::from("   q             : Quit"),
@@ -253,7 +254,6 @@ fn draw_help(f: &mut Frame, area: Rect) {
             Style::default().add_modifier(Modifier::BOLD),
         )]),
         Line::from("   ↑↓ / j k      : Move selection"),
-        Line::from("   a             : Add project"),
         Line::from("   d / Del       : Delete selected"),
         Line::from("   p / Enter     : Pull selected"),
         Line::from("   e             : Exec command"),

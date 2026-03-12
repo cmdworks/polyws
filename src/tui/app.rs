@@ -90,6 +90,19 @@ impl App {
         self.last_tick = Instant::now();
     }
 
+    pub(super) fn open_add_form(&mut self) {
+        if self.config.is_none() {
+            self.set_status(
+                "No workspace loaded. Press  i  to initialize first.".to_string(),
+                true,
+            );
+            return;
+        }
+        self.show_help = false;
+        self.show_add_form = true;
+        self.add_form = Default::default();
+    }
+
     pub(super) fn selected_project(&self) -> Option<&Project> {
         let cfg = self.config.as_ref()?;
         let i = self.table_state.selected()?;

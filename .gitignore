@@ -1,0 +1,19 @@
+/target
+/dist
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# env
+.env
+.envrc
+
+website/node_modules/

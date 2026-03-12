@@ -1,0 +1,108 @@
+/// Print a success line with a green checkmark.
+pub fn print_ok(msg: &str) {
+    println!("  \x1b[32m✔\x1b[0m {}", msg);
+}
+
+/// Print a failure line with a red cross.
+pub fn print_fail(msg: &str) {
+    println!("  \x1b[31m✘\x1b[0m {}", msg);
+}
+
+/// Print a warning line with a yellow triangle.
+pub fn print_warn(msg: &str) {
+    println!("  \x1b[33m⚠\x1b[0m {}", msg);
+}
+
+/// Print an informational line with a blue arrow.
+pub fn print_info(msg: &str) {
+    println!("  \x1b[34m→\x1b[0m {}", msg);
+}
+
+/// Print a bold section header.
+pub fn print_section(title: &str) {
+    println!("\n\x1b[1m[{}]\x1b[0m", title);
+}
+
+// ─────────────────────────────────────────────────────────
+// Table renderer (plain terminal, no ratatui dependency)
+// ─────────────────────────────────────────────────────────
+
+/// Print an aligned table to stdout.
+///
+/// `headers`  — column header labels  
+/// `rows`     — each row is a `Vec<String>` with the same number of columns  
+/// `colors`   — optional ANSI color code per column (e.g. `"32"` for green);
+///              use `""` for default terminal color.
+///
+/// # Example
+/// ```
+/// print_table(
+///     &["Name", "Branch", "Status"],
+///     &[vec!["foo".into(), "main".into(), "clean".into()]],
+///     &["", "36", "32"],
+/// );
+/// ```
+pub fn print_table(headers: &[&str], rows: &[Vec<String>], colors: &[&str]) {
+    // Compute column widths as the max of header length and any cell length.
+    let ncols = headers.len();
+    let mut widths: Vec<usize> = headers.iter().map(|h| h.len()).collect();
+    for row in rows {
+        for (i, cell) in row.iter().enumerate() {
+            if i < ncols {
+                widths[i] = widths[i].max(cell.len());
+            }
+        }
+    }
+
+    let horiz = |widths: &[usize]| {
+        let inner: Vec<String> = widths.iter().map(|w| "─".repeat(w + 2)).collect();
+        inner.join("┼")
+    };
+
+    // Top border
+    {
+        let inner: Vec<String> = widths.iter().map(|w| "─".repeat(w + 2)).collect();
+        println!("┌{}┐", inner.join("┬"));
+    }
+
+    // Header row
+    {
+        let cells: Vec<String> = headers
+            .iter()
+            .zip(widths.iter())
+            .map(|(h, w)| format!(" \x1b[1m{:<width$}\x1b[0m ", h, width = w))
+            .collect();
+        println!("│{}│", cells.join("│"));
+    }
+
+    // Header/body separator
+    println!("├{}┤", horiz(&widths));
+
+    // Data rows
+    for row in rows {
+        let cells: Vec<String> = (0..ncols)
+            .map(|i| {
+                let cell = row.get(i).map(|s| s.as_str()).unwrap_or("");
+                let color = colors.get(i).copied().unwrap_or("");
+                if color.is_empty() {
+                    format!(" {:<width$} ", cell, width = widths[i])
+                } else {
+                    // color the text but pad without escape codes affecting width
+                    format!(
+                        " \x1b[{}m{}\x1b[0m{} ",
+                        color,
+                        cell,
+                        " ".repeat(widths[i].saturating_sub(cell.len()))
+                    )
+                }
+            })
+            .collect();
+        println!("│{}│", cells.join("│"));
+    }
+
+    // Bottom border
+    {
+        let inner: Vec<String> = widths.iter().map(|w| "─".repeat(w + 2)).collect();
+        println!("└{}┘", inner.join("┴"));
+    }
+}

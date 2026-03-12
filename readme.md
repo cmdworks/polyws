@@ -15,6 +15,8 @@
 
 > Built while developing the [Rove ecosystem](https://github.com/rovehq/core) — a polyrepo setup where multiple projects live side-by-side. Existing tools fell short, so **polyws** was born: a single binary that orchestrates many repos as one unified workspace.
 
+Website: [https://cmdworks.github.io/polyws/](https://cmdworks.github.io/polyws/) (deployed via GitHub Pages CI)
+
 ## Install
 
 ```bash

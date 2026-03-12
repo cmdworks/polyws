@@ -47,7 +47,7 @@ export default function TuiSection() {
                                     <span key={t} className="text-white/40 hover:text-white cursor-pointer px-0.5 whitespace-nowrap transition">{t}</span>
                                 ))}
                             </div>
-                            <div className="text-white/30 text-[9px] md:text-[10px] hidden sm:block whitespace-nowrap">polyws v1.0.0</div>
+                            <div className="text-white/30 text-[9px] md:text-[10px] hidden sm:block whitespace-nowrap">polyws v1.0.1</div>
                         </div>
 
                         {/* Projects table */}

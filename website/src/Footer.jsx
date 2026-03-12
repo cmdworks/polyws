@@ -2,6 +2,8 @@ import React from "react";
 import logoUrl from "./assets/polyws_logo.min.png";
 
 export default function Footer() {
+    const generatorUrl = `${import.meta.env.BASE_URL}generet/`;
+
     return (
         <footer className="footer mt-20 py-12 border-t border-white/10 bg-[#030304] relative overflow-hidden">
             {/* Ambient Lighting */}
@@ -20,6 +22,7 @@ export default function Footer() {
                     <a href="#commands" className="hover:text-primary transition-colors">Commands</a>
                     <a href="#tui" className="hover:text-primary transition-colors">TUI</a>
                     <a href="#config" className="hover:text-primary transition-colors">Config</a>
+                    <a href={generatorUrl} className="hover:text-primary transition-colors">Generet</a>
                     <a href="#install" className="hover:text-primary transition-colors">Install</a>
                     <a href="https://github.com/cmdworks/polyws" target="_blank" rel="noopener" className="text-white hover:text-tertiary transition-colors flex items-center gap-1">
                         GitHub

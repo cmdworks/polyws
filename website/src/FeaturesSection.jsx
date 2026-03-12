@@ -6,7 +6,7 @@ const features = [
         icon: Network,
         cmd: "polyws init · add · list",
         title: "Workspace Management",
-        desc: "Declare your entire repo topology in a single .polyws file. Add, remove, and inspect repos with surgical precision. Dependency ordering is computed automatically from the graph.",
+        desc: "Declare your repo topology in .poly/.polyws JSON or TOML files. Add, remove, and inspect repos with surgical precision. Dependency ordering is computed automatically from the graph.",
     },
     {
         icon: Cpu,

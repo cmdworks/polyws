@@ -89,6 +89,8 @@ polyws status              # branch + dirty-file count per repo
 polyws accepts workspace config in JSON or TOML using any of these names:
 `.polyws`, `.poly`, `.polyws.json`, `.poly.json`, `.polyws.toml`, `.poly.toml`
 
+Config generator page: [https://cmdworks.github.io/polyws/generet/](https://cmdworks.github.io/polyws/generet/)
+
 ```json
 {
   "name": "my-workspace",
@@ -247,7 +249,8 @@ src/
 | Crate | Purpose |
 |---|---|
 | `clap` | CLI parsing |
-| `serde_json` | Config serialisation |
+| `serde_json` | JSON config serialisation |
+| `toml` | TOML config serialisation |
 | `tokio` | Async runtime (sync daemon) |
 | `rayon` | Parallel repo execution |
 | `git2` | Libgit2 bindings |

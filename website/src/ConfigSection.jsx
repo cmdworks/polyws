@@ -1,6 +1,8 @@
 import React from "react";
 
 export default function ConfigSection() {
+    const generatorUrl = `${import.meta.env.BASE_URL}generet/`;
+
     return (
         <section id="config" className="py-24 md:py-32 relative bg-surface">
             <div className="text-center mb-16 max-w-4xl mx-auto px-4 z-10 relative">
@@ -10,11 +12,22 @@ export default function ConfigSection() {
                     <span className="w-4 h-px bg-tertiary"></span>
                 </div>
                 <h2 className="text-4xl md:text-5xl font-heading font-bold tracking-tight mb-4">
-                    The .polyws <span className="text-gradient-primary">Manifest</span>
+                    Workspace <span className="text-gradient-primary">Manifest</span>
                 </h2>
                 <p className="mt-4 text-lg text-muted max-w-2xl mx-auto leading-relaxed font-body">
-                    A single JSON source of truth for your entire workspace topography.
+                    polyws supports JSON and TOML config files using .poly/.polyws naming variants.
                 </p>
+                <p className="mt-4 font-mono text-xs text-muted max-w-3xl mx-auto">
+                    Valid names: .polyws, .poly, .polyws.json, .poly.json, .polyws.toml, .poly.toml
+                </p>
+                <div className="mt-6">
+                    <a
+                        href={generatorUrl}
+                        className="inline-flex items-center justify-center px-6 py-3 text-sm font-body font-semibold text-white uppercase tracking-wider bg-gradient-primary rounded-full shadow-glow-primary hover:shadow-glow-primary-hover hover:-translate-y-0.5 transition-all"
+                    >
+                        Open Config Generator
+                    </a>
+                </div>
             </div>
             
             <div className="flex flex-col lg:flex-row gap-10 max-w-6xl mx-auto px-4 relative z-10">
@@ -26,7 +39,7 @@ export default function ConfigSection() {
                                 <div className="w-3 h-3 rounded-full bg-white/20"></div>
                                 <div className="w-3 h-3 rounded-full bg-white/20"></div>
                                 <div className="w-3 h-3 rounded-full bg-white/20"></div>
-                                <span className="ml-2 font-mono text-xs text-muted">.polyws</span>
+                                <span className="ml-2 font-mono text-xs text-muted">.polyws.json or .polyws.toml</span>
                             </div>
                             <button className="font-mono text-[10px] text-muted hover:text-primary transition uppercase tracking-widest px-2 py-1 bg-white/5 rounded border border-white/10 opacity-0 group-hover:opacity-100">Copy</button>
                         </div>

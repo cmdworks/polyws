@@ -1,0 +1,547 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>polyws Config Generator</title>
+    <style>
+      :root {
+        --bg: #060a12;
+        --surface: #0d1322;
+        --border: rgba(255, 255, 255, 0.14);
+        --text: #e8edf7;
+        --muted: #8c97ad;
+        --c1: #00d2ff;
+        --c2: #805ad7;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+        color: var(--text);
+        background: radial-gradient(1200px 700px at 80% -10%, rgba(0, 210, 255, 0.18), transparent 60%),
+          radial-gradient(900px 500px at 20% -10%, rgba(128, 90, 215, 0.18), transparent 60%), var(--bg);
+      }
+
+      .wrap {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 24px;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 18px;
+      }
+
+      .title {
+        font-size: 24px;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+      }
+
+      .muted {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .btn {
+        border: 1px solid var(--border);
+        background: #111a2b;
+        color: var(--text);
+        padding: 10px 14px;
+        border-radius: 10px;
+        font-size: 12px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        cursor: pointer;
+      }
+
+      .btn.primary {
+        background: linear-gradient(135deg, var(--c1), #3a7bd5 55%, var(--c2));
+        border: none;
+        color: #03111b;
+        font-weight: 700;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: 1.1fr 1fr;
+        gap: 16px;
+      }
+
+      @media (max-width: 980px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .card {
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01));
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 16px;
+        backdrop-filter: blur(6px);
+      }
+
+      .section-title {
+        margin: 0 0 12px;
+        font-size: 13px;
+        color: var(--c1);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      .row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+
+      @media (max-width: 760px) {
+        .row {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-bottom: 10px;
+      }
+
+      label {
+        font-size: 11px;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      input,
+      select,
+      textarea {
+        width: 100%;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 10px 11px;
+        background: #0b1220;
+        color: var(--text);
+        font: inherit;
+        font-size: 13px;
+      }
+
+      input:focus,
+      select:focus,
+      textarea:focus {
+        border-color: var(--c1);
+        outline: none;
+      }
+
+      .project {
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 12px;
+        padding: 10px;
+        margin-bottom: 10px;
+        background: rgba(0, 0, 0, 0.2);
+      }
+
+      .project-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 8px;
+      }
+
+      .project-name {
+        font-size: 12px;
+        color: var(--c1);
+      }
+
+      .actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .code {
+        min-height: 540px;
+        white-space: pre;
+        overflow: auto;
+        font-size: 12px;
+        line-height: 1.5;
+        background: #03060d;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 12px;
+        padding: 12px;
+      }
+
+      .help {
+        margin-top: 8px;
+        font-size: 11px;
+        color: var(--muted);
+        line-height: 1.4;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="topbar">
+        <div>
+          <div class="title">polyws Config Generator</div>
+          <div class="muted">Generate workspace config in JSON or TOML for .poly/.polyws variants.</div>
+        </div>
+        <div class="actions">
+          <a class="btn" href="../">Back To Site</a>
+        </div>
+      </div>
+
+      <div class="grid">
+        <section class="card">
+          <h2 class="section-title">Workspace</h2>
+          <div class="row">
+            <div class="field">
+              <label for="workspaceName">name</label>
+              <input id="workspaceName" value="my-workspace" />
+            </div>
+            <div class="field">
+              <label for="defaultInterval">sync_interval_minutes (optional)</label>
+              <input id="defaultInterval" type="number" min="1" placeholder="30" />
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="field">
+              <label for="format">output format</label>
+              <select id="format">
+                <option value="json">JSON</option>
+                <option value="toml">TOML</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="filename">suggested filename</label>
+              <select id="filename">
+                <option value=".polyws">.polyws</option>
+                <option value=".poly">.poly</option>
+                <option value=".polyws.json">.polyws.json</option>
+                <option value=".poly.json">.poly.json</option>
+                <option value=".polyws.toml">.polyws.toml</option>
+                <option value=".poly.toml">.poly.toml</option>
+              </select>
+            </div>
+          </div>
+
+          <h2 class="section-title" style="margin-top: 14px;">Projects</h2>
+          <div id="projects"></div>
+          <div class="actions">
+            <button id="addProject" class="btn">Add Project</button>
+          </div>
+
+          <h2 class="section-title" style="margin-top: 14px;">VM (optional)</h2>
+          <div class="field">
+            <label><input id="vmEnabled" type="checkbox" style="width:auto;margin-right:8px;" />Include vm section</label>
+          </div>
+          <div class="row" id="vmFields" style="display:none;">
+            <div class="field">
+              <label for="vmHost">vm.host</label>
+              <input id="vmHost" placeholder="dev-box" />
+            </div>
+            <div class="field">
+              <label for="vmUser">vm.user</label>
+              <input id="vmUser" placeholder="ubuntu" />
+            </div>
+            <div class="field">
+              <label for="vmPath">vm.path</label>
+              <input id="vmPath" placeholder="~/workspace/my-workspace" />
+            </div>
+            <div class="field">
+              <label for="vmSync">vm.sync</label>
+              <select id="vmSync">
+                <option value="mutagen">mutagen</option>
+                <option value="rsync">rsync</option>
+              </select>
+            </div>
+            <div class="field" style="grid-column:1 / -1;">
+              <label for="vmDeps">vm.dependencies (comma-separated)</label>
+              <input id="vmDeps" placeholder="git,rust,cargo" />
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2 class="section-title">Output</h2>
+          <pre id="output" class="code"></pre>
+          <div class="actions" style="margin-top: 10px;">
+            <button id="copyBtn" class="btn">Copy</button>
+            <button id="downloadBtn" class="btn primary">Download</button>
+          </div>
+          <div class="help">
+            Valid config names: <code>.polyws</code>, <code>.poly</code>, <code>.polyws.json</code>,
+            <code>.poly.json</code>, <code>.polyws.toml</code>, <code>.poly.toml</code>.
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <script>
+      const projectsEl = document.getElementById("projects");
+      const outputEl = document.getElementById("output");
+      const formatEl = document.getElementById("format");
+      const filenameEl = document.getElementById("filename");
+      const vmEnabledEl = document.getElementById("vmEnabled");
+      const vmFieldsEl = document.getElementById("vmFields");
+
+      const state = {
+        projects: [newProject()],
+      };
+
+      function newProject() {
+        return {
+          name: "",
+          path: "",
+          url: "",
+          branch: "main",
+          depends_on_csv: "",
+          sync_url: "",
+          sync_interval: "",
+        };
+      }
+
+      function escToml(str) {
+        return String(str).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+      }
+
+      function csvToArray(value) {
+        return value
+          .split(",")
+          .map((v) => v.trim())
+          .filter(Boolean);
+      }
+
+      function renderProjects() {
+        projectsEl.innerHTML = "";
+        state.projects.forEach((p, i) => {
+          const div = document.createElement("div");
+          div.className = "project";
+          div.innerHTML = `
+            <div class="project-head">
+              <div class="project-name">project #${i + 1}</div>
+              <button class="btn remove-project" data-index="${i}" ${state.projects.length === 1 ? "disabled" : ""}>Remove</button>
+            </div>
+            <div class="row">
+              <div class="field">
+                <label>name</label>
+                <input data-index="${i}" data-key="name" value="${escapeHtml(p.name)}" />
+              </div>
+              <div class="field">
+                <label>path (optional)</label>
+                <input data-index="${i}" data-key="path" value="${escapeHtml(p.path)}" placeholder="services/core" />
+              </div>
+              <div class="field">
+                <label>url</label>
+                <input data-index="${i}" data-key="url" value="${escapeHtml(p.url)}" placeholder="git@github.com:org/repo.git" />
+              </div>
+              <div class="field">
+                <label>branch</label>
+                <input data-index="${i}" data-key="branch" value="${escapeHtml(p.branch)}" />
+              </div>
+              <div class="field">
+                <label>depends_on (csv)</label>
+                <input data-index="${i}" data-key="depends_on_csv" value="${escapeHtml(p.depends_on_csv)}" placeholder="core,plugins" />
+              </div>
+              <div class="field">
+                <label>sync_url (optional)</label>
+                <input data-index="${i}" data-key="sync_url" value="${escapeHtml(p.sync_url)}" placeholder="git@gitlab.com:backup/repo.git" />
+              </div>
+              <div class="field">
+                <label>sync_interval (optional)</label>
+                <input data-index="${i}" data-key="sync_interval" type="number" min="1" value="${escapeHtml(p.sync_interval)}" placeholder="10" />
+              </div>
+            </div>
+          `;
+          projectsEl.appendChild(div);
+        });
+      }
+
+      function escapeHtml(s) {
+        return String(s)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+
+      function normalizeProject(p) {
+        const out = {
+          name: p.name.trim(),
+          url: p.url.trim(),
+          branch: p.branch.trim() || "main",
+        };
+        const path = p.path.trim();
+        if (path) out.path = path;
+        const deps = csvToArray(p.depends_on_csv);
+        if (deps.length) out.depends_on = deps;
+        const syncUrl = p.sync_url.trim();
+        if (syncUrl) out.sync_url = syncUrl;
+        const interval = Number(p.sync_interval);
+        if (Number.isFinite(interval) && interval > 0) out.sync_interval = interval;
+        return out;
+      }
+
+      function buildConfigObject() {
+        const cfg = {
+          name: document.getElementById("workspaceName").value.trim() || "workspace",
+          projects: state.projects.map(normalizeProject),
+        };
+
+        const syncMinutes = Number(document.getElementById("defaultInterval").value);
+        if (Number.isFinite(syncMinutes) && syncMinutes > 0) {
+          cfg.sync_interval_minutes = syncMinutes;
+        }
+
+        if (vmEnabledEl.checked) {
+          const host = document.getElementById("vmHost").value.trim();
+          const user = document.getElementById("vmUser").value.trim();
+          const path = document.getElementById("vmPath").value.trim();
+          const sync = document.getElementById("vmSync").value.trim() || "rsync";
+          const dependencies = csvToArray(document.getElementById("vmDeps").value);
+
+          if (host && user && path) {
+            cfg.vm = { host, user, path, sync };
+            if (dependencies.length) cfg.vm.dependencies = dependencies;
+          }
+        }
+
+        return cfg;
+      }
+
+      function toToml(cfg) {
+        const lines = [];
+        lines.push(`name = "${escToml(cfg.name)}"`);
+        if (typeof cfg.sync_interval_minutes === "number") {
+          lines.push(`sync_interval_minutes = ${cfg.sync_interval_minutes}`);
+        }
+
+        if (!cfg.projects.length) {
+          lines.push("projects = []");
+        }
+
+        cfg.projects.forEach((p) => {
+          lines.push("");
+          lines.push("[[projects]]");
+          lines.push(`name = "${escToml(p.name)}"`);
+          if (p.path) lines.push(`path = "${escToml(p.path)}"`);
+          lines.push(`url = "${escToml(p.url)}"`);
+          lines.push(`branch = "${escToml(p.branch || "main")}"`);
+          if (Array.isArray(p.depends_on) && p.depends_on.length) {
+            lines.push(
+              `depends_on = [${p.depends_on.map((d) => `"${escToml(d)}"`).join(", ")}]`
+            );
+          }
+          if (p.sync_url) lines.push(`sync_url = "${escToml(p.sync_url)}"`);
+          if (typeof p.sync_interval === "number") {
+            lines.push(`sync_interval = ${p.sync_interval}`);
+          }
+        });
+
+        if (cfg.vm) {
+          lines.push("");
+          lines.push("[vm]");
+          lines.push(`host = "${escToml(cfg.vm.host)}"`);
+          lines.push(`user = "${escToml(cfg.vm.user)}"`);
+          lines.push(`path = "${escToml(cfg.vm.path)}"`);
+          lines.push(`sync = "${escToml(cfg.vm.sync || "rsync")}"`);
+          if (Array.isArray(cfg.vm.dependencies) && cfg.vm.dependencies.length) {
+            lines.push(
+              `dependencies = [${cfg.vm.dependencies.map((d) => `"${escToml(d)}"`).join(", ")}]`
+            );
+          }
+        }
+
+        return lines.join("\n") + "\n";
+      }
+
+      function syncFilenameWithFormat() {
+        const fmt = formatEl.value;
+        const current = filenameEl.value;
+        if (fmt === "json" && current.endsWith(".toml")) {
+          filenameEl.value = ".polyws.json";
+        }
+        if (fmt === "toml" && current.endsWith(".json")) {
+          filenameEl.value = ".polyws.toml";
+        }
+      }
+
+      function renderOutput() {
+        syncFilenameWithFormat();
+        const cfg = buildConfigObject();
+        const text =
+          formatEl.value === "json"
+            ? JSON.stringify(cfg, null, 2) + "\n"
+            : toToml(cfg);
+        outputEl.textContent = text;
+      }
+
+      document.getElementById("addProject").addEventListener("click", () => {
+        state.projects.push(newProject());
+        renderProjects();
+        renderOutput();
+      });
+
+      projectsEl.addEventListener("click", (e) => {
+        if (!e.target.classList.contains("remove-project")) return;
+        const i = Number(e.target.dataset.index);
+        state.projects.splice(i, 1);
+        if (!state.projects.length) state.projects.push(newProject());
+        renderProjects();
+        renderOutput();
+      });
+
+      projectsEl.addEventListener("input", (e) => {
+        const idx = e.target.dataset.index;
+        const key = e.target.dataset.key;
+        if (idx === undefined || !key) return;
+        state.projects[Number(idx)][key] = e.target.value;
+        renderOutput();
+      });
+
+      document.querySelectorAll("input,select,textarea").forEach((el) => {
+        if (el.closest("#projects")) return;
+        el.addEventListener("input", renderOutput);
+        el.addEventListener("change", renderOutput);
+      });
+
+      vmEnabledEl.addEventListener("change", () => {
+        vmFieldsEl.style.display = vmEnabledEl.checked ? "grid" : "none";
+        renderOutput();
+      });
+
+      document.getElementById("copyBtn").addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(outputEl.textContent);
+        } catch (_) {}
+      });
+
+      document.getElementById("downloadBtn").addEventListener("click", () => {
+        const blob = new Blob([outputEl.textContent], { type: "text/plain;charset=utf-8" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = filenameEl.value || ".polyws";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(a.href);
+      });
+
+      renderProjects();
+      renderOutput();
+    </script>
+  </body>
+</html>

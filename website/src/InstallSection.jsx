@@ -36,7 +36,7 @@ const installCmds = [
     },
     {
         label: "Specify a Version",
-        cmd: "polyws_VERSION=v1.0.0 curl -fsSL https://raw.githubusercontent.com/cmdworks/polyws/main/install.sh | bash",
+        cmd: "polyws_VERSION=v1.0.1 curl -fsSL https://raw.githubusercontent.com/cmdworks/polyws/main/install.sh | bash",
     },
     {
         label: "Build from Source",

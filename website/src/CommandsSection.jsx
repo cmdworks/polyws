@@ -10,7 +10,7 @@ const commands = [
     {
         cmd: "polyws init",
         args: "—",
-        desc: "Initialize a new workspace in the current directory; creates .polyws",
+        desc: "Initialize a workspace config in the current directory (.polyws by default)",
         cat: "workspace",
     },
     {

@@ -4,7 +4,7 @@ const steps = [
     {
         num: "01",
         cmd: "polyws init",
-        desc: "Creates .polyws in the current directory. Your workspace root is established—all polyws commands resolve relative to it.",
+        desc: "Creates a workspace config in the current directory. Your workspace root is established and all polyws commands resolve relative to it.",
     },
     {
         num: "02",

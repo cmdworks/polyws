@@ -10,7 +10,7 @@
 [![Release](https://img.shields.io/github/v/release/cmdworks/polyws?style=for-the-badge&logo=github&color=805AD7)](https://github.com/cmdworks/polyws/releases/latest)
 [![License](https://img.shields.io/badge/license-MIT-FF42A1?style=for-the-badge)](LICENSE)
 [![Built with Rust](https://img.shields.io/badge/built%20with-Rust-3A7BD5?style=for-the-badge&logo=rust)](https://www.rust-lang.org)
-  [![Website](https://img.shields.io/badge/Website-polyws-brightgreen?logo=github)](https://cmdworks.github.io/polyws/)
+[![Website](https://img.shields.io/badge/Website-GitHub%20Pages-00A7E1?style=for-the-badge&logo=githubpages&logoColor=white)](https://cmdworks.github.io/polyws/)
 </p>
 ---
 

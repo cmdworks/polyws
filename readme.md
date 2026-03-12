@@ -5,12 +5,13 @@
 </p>
 
 **Polyrepo Workspace Orchestrator**
-
+<p align="center">
 [![CI](https://img.shields.io/github/actions/workflow/status/cmdworks/polyws/ci.yml?style=for-the-badge&logo=github&color=00D2FF)](https://github.com/cmdworks/polyws/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/cmdworks/polyws?style=for-the-badge&logo=github&color=805AD7)](https://github.com/cmdworks/polyws/releases/latest)
 [![License](https://img.shields.io/badge/license-MIT-FF42A1?style=for-the-badge)](LICENSE)
 [![Built with Rust](https://img.shields.io/badge/built%20with-Rust-3A7BD5?style=for-the-badge&logo=rust)](https://www.rust-lang.org)
-
+  [![Website](https://img.shields.io/badge/Website-polyws-brightgreen?logo=github)](https://cmdworks.github.io/polyws/)
+</p>
 ---
 
 > Built while developing the [Rove ecosystem](https://github.com/rovehq/core) — a polyrepo setup where multiple projects live side-by-side. Existing tools fell short, so **polyws** was born: a single binary that orchestrates many repos as one unified workspace.

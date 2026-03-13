@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use chrono::Local;
 use git2::{Repository, ResetType};
 use std::path::Path;
 use std::process::{Command, Output};
@@ -346,8 +347,10 @@ pub fn push_sync_branch(path: &Path, base_branch: &str, sync_url: &str) -> Resul
                 );
             }
 
+            let ts = Local::now().format("%Y-%m-%dT%H:%M:%S").to_string();
+            let sync_msg = format!("polyws sync {}", ts);
             let commit = Command::new("git")
-                .args(["commit", "-m", "polyws sync"])
+                .args(["commit", "-m", &sync_msg])
                 .current_dir(path)
                 .output()
                 .context("Failed to run git commit")?;
@@ -590,6 +593,34 @@ pub fn repo_status(path: &Path) -> Result<String> {
 /// Returns `true` when `path` is a valid git repository.
 pub fn is_repo(path: &Path) -> bool {
     Repository::open(path).is_ok()
+}
+
+/// Push the local branch to origin with `--force`.
+pub fn force_push_repo(path: &Path, branch: &str) -> Result<()> {
+    let output = Command::new("git")
+        .args(["push", "--force", "origin", branch])
+        .current_dir(path)
+        .output()
+        .context("Failed to run git push --force")?;
+    if !output.status.success() {
+        anyhow::bail!(
+            "git push --force origin {} failed: {}",
+            branch,
+            summarize_git_failure(&output)
+        );
+    }
+    Ok(())
+}
+
+/// Commit all pending changes with an auto-generated timestamp message and
+/// force-push to origin.  Useful as an instant snapshot push.
+pub fn flush_repo(path: &Path, branch: &str) -> Result<()> {
+    if is_worktree_dirty(path)? {
+        let ts = Local::now().format("%Y-%m-%dT%H:%M:%S").to_string();
+        let msg = format!("polyws flush {}", ts);
+        commit_all(path, &msg)?;
+    }
+    force_push_repo(path, branch)
 }
 
 /// Returns the configured remote URL for `origin`, or an error.

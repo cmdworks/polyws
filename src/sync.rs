@@ -20,9 +20,20 @@ const SYNC_LOG: &str = ".polyws/sync.log";
 
 /// Spawn a detached background process that runs the sync daemon loop.
 pub fn start() -> Result<()> {
+    let msg = start_silent()?;
+    if msg.contains("already running") {
+        println!("{}", msg);
+    } else {
+        utils::print_ok(&msg);
+    }
+    Ok(())
+}
+
+/// Start the daemon without printing to stdout/stderr.
+/// Returns a user-facing status line for TUI logging.
+pub fn start_silent() -> Result<String> {
     if is_running()? {
-        println!("Sync daemon is already running.");
-        return Ok(());
+        return Ok("Sync daemon is already running.".to_string());
     }
 
     fs::create_dir_all(POLYWS_DIR).context("Failed to create .polyws directory")?;
@@ -41,15 +52,26 @@ pub fn start() -> Result<()> {
 
     let pid = child.id();
     fs::write(PID_FILE, pid.to_string()).context("Failed to write PID file")?;
-
-    utils::print_ok(&format!("Sync daemon started (PID {})", pid));
-    Ok(())
+    Ok(format!("Sync daemon started (PID {})", pid))
 }
 
 pub fn stop() -> Result<()> {
+    let msg = stop_silent()?;
+    if msg.contains("not running") {
+        println!("{}", msg);
+    } else if msg.contains("Could not signal") {
+        utils::print_warn(&msg);
+    } else {
+        utils::print_ok(&msg);
+    }
+    Ok(())
+}
+
+/// Stop the daemon without printing to stdout/stderr.
+/// Returns a user-facing status line for TUI logging.
+pub fn stop_silent() -> Result<String> {
     if !Path::new(PID_FILE).exists() {
-        println!("Sync daemon is not running.");
-        return Ok(());
+        return Ok("Sync daemon is not running.".to_string());
     }
 
     let pid_str = fs::read_to_string(PID_FILE).context("Failed to read PID file")?;
@@ -62,11 +84,13 @@ pub fn stop() -> Result<()> {
             .status()
             .map(|s| s.success())
             .unwrap_or(false);
-        if ok {
-            utils::print_ok(&format!("Sync daemon stopped (PID {})", pid));
+        let msg = if ok {
+            format!("Sync daemon stopped (PID {})", pid)
         } else {
-            utils::print_warn("Could not signal daemon — it may have already stopped.");
-        }
+            "Could not signal daemon — it may have already stopped.".to_string()
+        };
+        let _ = fs::remove_file(PID_FILE);
+        return Ok(msg);
     }
     #[cfg(windows)]
     {
@@ -75,19 +99,19 @@ pub fn stop() -> Result<()> {
             .status()
             .map(|s| s.success())
             .unwrap_or(false);
-        if ok {
-            utils::print_ok(&format!("Sync daemon stopped (PID {})", pid));
+        let msg = if ok {
+            format!("Sync daemon stopped (PID {})", pid)
         } else {
-            utils::print_warn("Could not signal daemon — it may have already stopped.");
-        }
+            "Could not signal daemon — it may have already stopped.".to_string()
+        };
+        let _ = fs::remove_file(PID_FILE);
+        return Ok(msg);
     }
     #[cfg(not(any(unix, windows)))]
     {
-        utils::print_warn("Process signalling is not supported on this platform.");
+        let _ = fs::remove_file(PID_FILE);
+        return Ok("Process signalling is not supported on this platform.".to_string());
     }
-
-    let _ = fs::remove_file(PID_FILE);
-    Ok(())
 }
 
 pub fn status() -> Result<()> {
@@ -108,9 +132,19 @@ pub fn status() -> Result<()> {
 // ---------------------------------------------------------------------------
 
 pub fn sync_now() -> Result<()> {
+    for line in sync_now_silent()? {
+        println!("{}", line);
+    }
+    Ok(())
+}
+
+/// Run one mirror sync pass without direct terminal output.
+/// Returns the lines that can be shown in the TUI log panel.
+pub fn sync_now_silent() -> Result<Vec<String>> {
     let _lock = utils::acquire_repo_lock("sync-now")?;
     let config = WorkspaceConfig::load()?;
     let mut synced = 0usize;
+    let mut lines = Vec::new();
 
     for project in &config.projects {
         let sync_url = match &project.sync_url {
@@ -120,20 +154,20 @@ pub fn sync_now() -> Result<()> {
         let path = Path::new(project.local_dir());
         if !path.exists() {
             let msg = format!("'{}' not found, skipping", project.name);
-            utils::print_warn(&msg);
+            lines.push(format!("⚠ {}", msg));
             log_sync_line(&format!("sync: {}", msg));
             continue;
         }
         match git::push_sync_branch(path, &project.branch, sync_url) {
             Ok(_) => {
                 let msg = format!("{} → {}", project.name, sync_url);
-                utils::print_ok(&msg);
+                lines.push(format!("✔ {}", msg));
                 log_sync_line(&format!("sync: {}", msg));
                 synced += 1;
             }
             Err(e) => {
                 let msg = format!("{}: {}", project.name, e);
-                utils::print_fail(&msg);
+                lines.push(format!("✘ {}", msg));
                 log_sync_line(&format!("sync: {}", msg));
             }
         }
@@ -142,10 +176,10 @@ pub fn sync_now() -> Result<()> {
     if synced == 0 {
         let has_sync = config.projects.iter().any(|p| p.sync_url.is_some());
         if !has_sync {
-            println!("No projects have a sync_url configured.");
+            lines.push("No projects have a sync_url configured.".to_string());
         }
     }
-    Ok(())
+    Ok(lines)
 }
 
 // ---------------------------------------------------------------------------

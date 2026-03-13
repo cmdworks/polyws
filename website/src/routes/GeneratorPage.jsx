@@ -1,5 +1,4 @@
 import React, { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
 import {
   Folder,
   FolderOpen,
@@ -555,8 +554,6 @@ export default function GeneratorPage() {
     });
   };
 
-  const base = import.meta.env.BASE_URL;
-
   return (
     <div className="min-h-screen bg-background text-foreground font-mono relative overflow-x-hidden">
       <Navbar />
@@ -570,26 +567,6 @@ export default function GeneratorPage() {
             <p className="text-xs text-muted mt-1">
               Planner-first config generation with live tree and live JSON/TOML output.
             </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-wider">
-            <Link
-              to="/docs"
-              className="px-3 py-2 border border-primary/30 rounded-lg hover:bg-primary/10 transition"
-            >
-              Docs
-            </Link>
-            <Link
-              to="/changelog"
-              className="px-3 py-2 border border-primary/30 rounded-lg hover:bg-primary/10 transition"
-            >
-              Changelog
-            </Link>
-            <a
-              href={`${base}generet`}
-              className="px-3 py-2 bg-gradient-primary text-black rounded-lg font-semibold"
-            >
-              /polyws/generet
-            </a>
           </div>
         </header>
 

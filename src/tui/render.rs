@@ -168,9 +168,9 @@ pub(super) fn draw(f: &mut Frame, app: &mut App) {
             }
             Tab::Projects => {
                 if compact_hints {
-                    "a:Add d:Del x:Wipe p/↵:Pull f:Force u:Push e:Exec s:Ref ↑↓ q"
+                    "a:Add d:Del x:Wipe p/↵:Pull f:FPull F:FPush l:Flush u:Push i:RestoreGit e:Exec ↑↓ q"
                 } else {
-                    "a:Add d:Delete x:Wipe p/↵:Pull f:Force u:Push e:Exec s:Refresh ↑↓:Move q:Quit"
+                    "a:Add d:Del x:Wipe p/↵:Pull f:ForcePull F:ForcePush l:Flush u:Push i:RestoreGit e:Exec s:Refresh ↑↓ q:Quit"
                 }
             }
             Tab::Graph => {
@@ -263,11 +263,14 @@ fn draw_help(f: &mut Frame, area: Rect) {
             Style::default().add_modifier(Modifier::BOLD),
         )]),
         Line::from("   ↑↓ / j k      : Move selection"),
-        Line::from("   d / Del       : Delete selected"),
+        Line::from("   d / Del       : Remove from config"),
         Line::from("   x             : Delete local copy (confirm)"),
         Line::from("   p / Enter     : Pull selected"),
         Line::from("   f             : Force pull selected"),
+        Line::from("   F             : Force push selected"),
+        Line::from("   l             : Flush (auto-commit+force push)"),
         Line::from("   u             : Push selected"),
+        Line::from("   i             : Restore .git / re-add remote"),
         Line::from("   e             : Exec command"),
         Line::from("   s             : Refresh statuses"),
         Line::from(""),
@@ -311,6 +314,8 @@ fn draw_dashboard(f: &mut Frame, app: &App, area: Rect) {
                     let (status_str, status_color) =
                         if status.contains("missing") || status.starts_with('✘') {
                             (status.clone(), Color::Rgb(255, 66, 161))
+                        } else if status.contains("no .git") {
+                            (status.clone(), Color::Rgb(255, 165, 0))
                         } else if status.contains("modified") {
                             (status.clone(), Color::Rgb(128, 90, 215))
                         } else {
@@ -427,6 +432,8 @@ fn draw_projects(f: &mut Frame, app: &mut App, area: Rect) {
             let status = app.repo_statuses.get(i).cloned().unwrap_or_default();
             let status_color = if status.contains("missing") {
                 Color::Rgb(255, 66, 161)
+            } else if status.contains("no .git") {
+                Color::Rgb(255, 165, 0)
             } else if status.contains("modified") {
                 Color::Rgb(128, 90, 215)
             } else {
@@ -747,24 +754,7 @@ fn draw_sync(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_log(f: &mut Frame, app: &App, area: Rect) {
-    let items: Vec<ListItem> = app
-        .log_lines
-        .iter()
-        .map(|line| {
-            let style = if line.starts_with('✔') {
-                Style::default().fg(Color::Green)
-            } else if line.starts_with('✘') {
-                Style::default().fg(Color::Red)
-            } else if line.starts_with('⚠') {
-                Style::default().fg(Color::Yellow)
-            } else {
-                Style::default().fg(Color::White)
-            };
-            ListItem::new(Line::from(Span::styled(format!(" {}", line), style)))
-        })
-        .collect();
-
-    if items.is_empty() {
+    if app.log_lines.is_empty() {
         let p = Paragraph::new(
             " Press  d  to run doctor checks, or  e  on the Projects tab to exec a command.",
         )
@@ -776,13 +766,36 @@ fn draw_log(f: &mut Frame, app: &App, area: Rect) {
         );
         f.render_widget(p, area);
     } else {
-        let list = List::new(items).block(
-            Block::default()
-                .title(" Output ")
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Blue)),
-        );
-        f.render_widget(list, area);
+        let lines: Vec<Line> = app
+            .log_lines
+            .iter()
+            .map(|line| {
+                let style = if line.starts_with('✔') {
+                    Style::default().fg(Color::Green)
+                } else if line.starts_with('✘') {
+                    Style::default().fg(Color::Red)
+                } else if line.starts_with('⚠') {
+                    Style::default().fg(Color::Yellow)
+                } else {
+                    Style::default().fg(Color::White)
+                };
+                Line::from(Span::styled(format!(" {}", line), style))
+            })
+            .collect();
+
+        let visible_height = area.height.saturating_sub(2) as usize;
+        let scroll_y = app.log_lines.len().saturating_sub(visible_height) as u16;
+
+        let paragraph = Paragraph::new(lines)
+            .wrap(Wrap { trim: false })
+            .scroll((scroll_y, 0))
+            .block(
+                Block::default()
+                    .title(" Output ")
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::Blue)),
+            );
+        f.render_widget(paragraph, area);
     }
 }
 

@@ -1,9 +1,19 @@
 import React from "react";
-import { Link } from "react-router-dom";
 import Footer from "../Footer";
 import Navbar from "../Navbar";
 
 const ENTRIES = [
+  {
+    version: "1.0.3",
+    date: "2026-03-13",
+    items: [
+      "TUI Projects pane: new (i) key re-inits .git and restores remote when .git is deleted locally.",
+      "TUI Projects pane: (F) force-push with optional commit prompt; (l) flush — auto-commit all changes with timestamp and force-push.",
+      "Sync / push_sync_branch now uses an ISO-8601 timestamp as the commit message (e.g. 'polyws sync 2026-03-13T15:30:00') so every sync is a recoverable snapshot.",
+      "Status column shows orange 'no .git — press i to restore' when .git folder is missing but project directory exists.",
+      "Navbar highlights the active page (docs / changelog / generet) with a bottom border accent.",
+    ],
+  },
   {
     version: "1.0.2",
     date: "2026-03-12",
@@ -25,8 +35,6 @@ const ENTRIES = [
 ];
 
 export default function ChangelogPage() {
-  const base = import.meta.env.BASE_URL;
-
   return (
     <div className="min-h-screen bg-background text-foreground font-mono relative overflow-x-hidden">
       <Navbar />
@@ -40,20 +48,6 @@ export default function ChangelogPage() {
             <p className="text-xs text-muted mt-1">
               Release notes and feature updates.
             </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-wider">
-            <Link
-              to="/docs"
-              className="px-3 py-2 border border-primary/30 rounded-lg hover:bg-primary/10 transition"
-            >
-              Docs
-            </Link>
-            <a
-              href={`${base}changelog`}
-              className="px-3 py-2 bg-gradient-primary text-black rounded-lg font-semibold"
-            >
-              /polyws/changelog
-            </a>
           </div>
         </header>
 

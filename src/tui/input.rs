@@ -186,7 +186,10 @@ fn handle_tab_key(app: &mut App, code: KeyCode) {
             KeyCode::Char('d') | KeyCode::Delete => app.remove_selected(),
             KeyCode::Char('x') | KeyCode::Char('X') => app.request_delete_selected(),
             KeyCode::Char('p') | KeyCode::Enter => app.pull_selected(),
-            KeyCode::Char('f') | KeyCode::Char('F') => app.pull_selected_with_force(true),
+            KeyCode::Char('f') => app.pull_selected_with_force(true),
+            KeyCode::Char('F') => app.request_force_push_selected(),
+            KeyCode::Char('l') | KeyCode::Char('L') => app.flush_selected(),
+            KeyCode::Char('i') | KeyCode::Char('I') => app.restore_remote_selected(),
             KeyCode::Char('u') => app.request_push_selected(),
             KeyCode::Char('e') => {
                 app.show_exec_prompt = true;
@@ -263,14 +266,13 @@ fn run_exec_cmd(app: &mut App, cmd: &str) {
         let levels = match cfg.execution_levels() {
             Ok(lvls) => lvls,
             Err(e) => {
-                app.log_lines
-                    .push(format!("✘ failed to sort dependencies: {}", e));
+                app.push_log_line(format!("✘ failed to sort dependencies: {}", e));
                 return;
             }
         };
 
         for (level_idx, level) in levels.into_iter().enumerate() {
-            app.log_lines.push(format!("-- Level {} --", level_idx + 1));
+            app.push_log_line(format!("-- Level {} --", level_idx + 1));
 
             // Run all projects in this level concurrently, capturing output.
             let results: Vec<(String, Result<std::process::Output, std::io::Error>)> = level
@@ -307,20 +309,20 @@ fn run_exec_cmd(app: &mut App, cmd: &str) {
                 match out_result {
                     Ok(o) if o.status.success() => {
                         let stdout = String::from_utf8_lossy(&o.stdout);
-                        app.log_lines.push(format!("── {} ──", name));
+                        app.push_log_line(format!("── {} ──", name));
                         for line in stdout.lines() {
-                            app.log_lines.push(format!("   {}", line));
+                            app.push_log_line(format!("   {}", line));
                         }
                     }
                     Ok(o) => {
                         let stderr = String::from_utf8_lossy(&o.stderr);
-                        app.log_lines.push(format!("✘ {} failed", name));
+                        app.push_log_line(format!("✘ {} failed", name));
                         for line in stderr.lines() {
-                            app.log_lines.push(format!("   {}", line));
+                            app.push_log_line(format!("   {}", line));
                         }
                     }
                     Err(e) => {
-                        app.log_lines.push(format!("✘ {}: {}", name, e));
+                        app.push_log_line(format!("✘ {}: {}", name, e));
                     }
                 }
             }

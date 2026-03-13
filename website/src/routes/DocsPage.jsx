@@ -1,5 +1,4 @@
 import React from "react";
-import { Link } from "react-router-dom";
 import Footer from "../Footer";
 import Navbar from "../Navbar";
 
@@ -20,6 +19,23 @@ const USER_COMMANDS = [
   ["polyws exec \"<cmd>\"", "Run command in dependency order in parallel levels"],
   ["polyws snapshot create", "Save current repo heads as snapshot"],
   ["polyws sync start", "Start background mirror daemon for sync_url remotes"],
+];
+
+const TUI_KEYS = [
+  ["p / Enter", "Pull selected repo (clone if missing)"],
+  ["f", "Force pull — hard reset to origin branch"],
+  ["u", "Push selected repo (commit prompt if dirty)"],
+  ["F", "Force push — push with --force (commit prompt if dirty)"],
+  ["l", "Flush — auto-commit all changes with timestamp + force push"],
+  ["i", "Restore git — re-init .git and re-add remote (when .git is missing)"],
+  ["d / Del", "Remove project from config"],
+  ["x", "Wipe local copy from disk (with confirm)"],
+  ["e", "Exec — run shell command in repo directory"],
+  ["s", "Refresh statuses"],
+  ["a", "Add new project (any tab)"],
+  ["h", "Toggle help popup"],
+  ["1–6 / Tab", "Switch tabs"],
+  ["q", "Quit TUI"],
 ];
 
 const DEV_NOTES = [
@@ -74,9 +90,6 @@ branch = "main"
 depends_on = ["core"]`;
 
 export default function DocsPage() {
-  const base = import.meta.env.BASE_URL;
-  const docsUrl = `${base}docs`;
-
   return (
     <div className="min-h-screen bg-background text-foreground font-mono relative overflow-x-hidden">
       <Navbar />
@@ -91,26 +104,6 @@ export default function DocsPage() {
               User docs and developer docs for workspace setup, operations, and contribution flow.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2 text-xs uppercase tracking-wider">
-            <Link
-              to="/generet"
-              className="px-3 py-2 border border-primary/30 rounded-lg hover:bg-primary/10 transition"
-            >
-              Config Generator
-            </Link>
-            <Link
-              to="/changelog"
-              className="px-3 py-2 border border-primary/30 rounded-lg hover:bg-primary/10 transition"
-            >
-              Changelog
-            </Link>
-            <a
-              href={docsUrl}
-              className="px-3 py-2 bg-gradient-primary text-black rounded-lg font-semibold"
-            >
-              /polyws/docs
-            </a>
-          </div>
         </header>
 
         <div className="grid grid-cols-1 lg:grid-cols-[240px_1fr] gap-4">
@@ -121,6 +114,7 @@ export default function DocsPage() {
               <a href="#commands" className="block text-muted hover:text-foreground">Command Reference</a>
               <a href="#config" className="block text-muted hover:text-foreground">Config & Formats</a>
               <a href="#nested" className="block text-muted hover:text-foreground">Nested Paths</a>
+              <a href="#tui" className="block text-muted hover:text-foreground">TUI Key Bindings</a>
               <a href="#dev" className="block text-muted hover:text-foreground">Developer Docs</a>
               <a href="#contrib" className="block text-muted hover:text-foreground">Contributing</a>
             </div>
@@ -201,6 +195,42 @@ export default function DocsPage() {
               </p>
               <pre className="bg-black/70 border border-white/10 rounded-xl p-3 overflow-auto text-xs leading-6">{`polyws add core git@github.com:org/core.git --path apps/platform/core
 polyws add api git@github.com:org/api.git --path services/api --depends-on core`}</pre>
+            </section>
+
+            <section id="tui" className="bg-surface/90 border border-white/15 rounded-2xl p-4">
+              <h2 className="text-primary text-xs uppercase tracking-[0.18em] mb-3">TUI Key Bindings</h2>
+              <p className="text-xs text-muted mb-3">
+                Launch the interactive TUI with <span className="text-cyan-300">polyws</span> (no arguments).
+                All project operations are available from the <strong>Projects</strong> tab.
+              </p>
+              <div className="overflow-auto border border-white/10 rounded-xl mb-3">
+                <table className="w-full text-xs">
+                  <thead className="bg-black/35 text-primary uppercase tracking-wider">
+                    <tr>
+                      <th className="text-left px-3 py-2">Key</th>
+                      <th className="text-left px-3 py-2">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {TUI_KEYS.map(([key, desc]) => (
+                      <tr key={key} className="border-t border-white/10">
+                        <td className="px-3 py-2 text-cyan-300 font-mono whitespace-nowrap">{key}</td>
+                        <td className="px-3 py-2 text-muted">{desc}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-xs text-muted">
+                When a project's <code className="text-cyan-300">.git</code> folder is missing but the directory
+                exists, the status column shows <span className="text-orange-400">no .git — press i to restore</span>.
+                Press <kbd className="border border-white/20 px-1 rounded text-cyan-300">i</kbd> to re-initialise git
+                and re-add the remote from the stored URL automatically.
+              </p>
+              <p className="text-xs text-muted mt-2">
+                Sync commits use a timestamp message (<code className="text-cyan-300">polyws sync 2026-03-13T15:30:00</code>)
+                so every mirror push is a named, recoverable snapshot.
+              </p>
             </section>
 
             <section id="dev" className="bg-surface/90 border border-white/15 rounded-2xl p-4">

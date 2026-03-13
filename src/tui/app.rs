@@ -37,6 +37,7 @@ pub(super) struct App {
     pub(super) task_label: Option<String>,
     task_rx: Option<Receiver<TaskMsg>>,
     pending_push: Option<PushScope>,
+    pending_push_force: bool,
 }
 
 enum TaskMsg {
@@ -50,6 +51,9 @@ enum PushScope {
 }
 
 impl App {
+    const MAX_LOG_LINE_CHARS: usize = 220;
+    const MAX_LOG_LINES: usize = 2000;
+
     pub(super) fn new() -> Self {
         let mut t = TableState::default();
         t.select(Some(0));
@@ -87,32 +91,47 @@ impl App {
             task_label: None,
             task_rx: None,
             pending_push: None,
+            pending_push_force: false,
         }
     }
 
     pub(super) fn tick(&mut self) {
+        let mut pending_logs = Vec::new();
+        let mut done_msg: Option<(bool, String)> = None;
+        let mut disconnected = false;
+
         if let Some(rx) = &self.task_rx {
             loop {
                 match rx.try_recv() {
-                    Ok(TaskMsg::Log(line)) => self.log_lines.push(line),
+                    Ok(TaskMsg::Log(line)) => pending_logs.push(line),
                     Ok(TaskMsg::Done { ok, msg }) => {
-                        self.task_running = false;
-                        self.task_label = None;
-                        self.task_rx = None;
-                        self.refresh_statuses();
-                        self.set_status(msg, !ok);
+                        done_msg = Some((ok, msg));
                         break;
                     }
                     Err(TryRecvError::Empty) => break,
                     Err(TryRecvError::Disconnected) => {
-                        self.task_running = false;
-                        self.task_label = None;
-                        self.task_rx = None;
-                        self.set_status("Background task ended".to_string(), false);
+                        disconnected = true;
                         break;
                     }
                 }
             }
+        }
+
+        for line in pending_logs {
+            self.push_log_line(line);
+        }
+
+        if let Some((ok, msg)) = done_msg {
+            self.task_running = false;
+            self.task_label = None;
+            self.task_rx = None;
+            self.refresh_statuses();
+            self.set_status(msg, !ok);
+        } else if disconnected {
+            self.task_running = false;
+            self.task_label = None;
+            self.task_rx = None;
+            self.set_status("Background task ended".to_string(), false);
         }
     }
 
@@ -133,7 +152,9 @@ impl App {
                 .map(|p| {
                     let path = Path::new(p.local_dir());
                     if !path.exists() {
-                        "\x1b[31mmissing\x1b[0m".to_string()
+                        "missing".to_string()
+                    } else if !git::is_repo(path) {
+                        "no .git — press i to restore".to_string()
                     } else {
                         git::repo_status(path).unwrap_or_else(|_| "?".to_string())
                     }
@@ -145,6 +166,49 @@ impl App {
     pub(super) fn set_status(&mut self, msg: String, error: bool) {
         self.status_msg = Some((msg, error));
         self.last_tick = Instant::now();
+    }
+
+    fn strip_ansi(s: &str) -> String {
+        let mut out = String::with_capacity(s.len());
+        let mut chars = s.chars().peekable();
+        while let Some(ch) = chars.next() {
+            if ch == '\u{1b}' {
+                if let Some('[') = chars.peek().copied() {
+                    let _ = chars.next();
+                    for c in chars.by_ref() {
+                        if ('@'..='~').contains(&c) {
+                            break;
+                        }
+                    }
+                    continue;
+                }
+            }
+            out.push(ch);
+        }
+        out
+    }
+
+    pub(super) fn push_log_line<S: Into<String>>(&mut self, line: S) {
+        let raw = line.into();
+        let mut clean = Self::strip_ansi(&raw)
+            .replace('\r', " ")
+            .replace('\n', " ")
+            .trim_end()
+            .to_string();
+
+        if clean.chars().count() > Self::MAX_LOG_LINE_CHARS {
+            clean = clean
+                .chars()
+                .take(Self::MAX_LOG_LINE_CHARS)
+                .collect::<String>();
+            clean.push('…');
+        }
+
+        self.log_lines.push(clean);
+        if self.log_lines.len() > Self::MAX_LOG_LINES {
+            let overflow = self.log_lines.len() - Self::MAX_LOG_LINES;
+            self.log_lines.drain(0..overflow);
+        }
     }
 
     pub(super) fn open_add_form(&mut self) {
@@ -360,7 +424,13 @@ impl App {
         });
     }
 
-    fn start_push_task(&mut self, label: String, display: String, commit_msg: Option<String>) {
+    fn start_push_task(
+        &mut self,
+        label: String,
+        display: String,
+        commit_msg: Option<String>,
+        force: bool,
+    ) {
         if self.task_running {
             self.set_status("Another task is already running".to_string(), true);
             return;
@@ -466,7 +536,12 @@ impl App {
                         continue;
                     }
 
-                    match git::push_repo(path, &p.branch) {
+                    let push_res = if force {
+                        git::force_push_repo(path, &p.branch)
+                    } else {
+                        git::push_repo(path, &p.branch)
+                    };
+                    match push_res {
                         Ok(_) => {
                             let _ = tx.send(TaskMsg::Log(format!("✔ {} pushed", p.name)));
                         }
@@ -644,8 +719,9 @@ impl App {
             self.show_commit_prompt = true;
             self.commit_input.clear();
             self.pending_push = Some(PushScope::All);
+            self.pending_push_force = false;
         } else {
-            self.start_push_task("push-all".to_string(), cfg.name.clone(), None);
+            self.start_push_task("push-all".to_string(), cfg.name.clone(), None, false);
         }
     }
 
@@ -675,9 +751,10 @@ impl App {
                 self.show_commit_prompt = true;
                 self.commit_input.clear();
                 self.pending_push = Some(PushScope::Selected(p));
+                self.pending_push_force = false;
             }
             Ok(false) => {
-                self.start_push_task("push-selected".to_string(), p.name.clone(), None);
+                self.start_push_task("push-selected".to_string(), p.name.clone(), None, false);
             }
             Err(e) => self.set_status(format!("{}: {}", p.name, e), true),
         }
@@ -687,6 +764,7 @@ impl App {
         self.show_commit_prompt = false;
         self.commit_input.clear();
         self.pending_push = None;
+        self.pending_push_force = false;
         self.set_status("Push cancelled".to_string(), false);
     }
 
@@ -697,23 +775,206 @@ impl App {
             return;
         }
         let scope = self.pending_push.take();
+        let force = self.pending_push_force;
+        self.pending_push_force = false;
         self.show_commit_prompt = false;
         self.commit_input.clear();
         match scope {
             Some(PushScope::All) => {
                 if let Some(cfg) = self.config.clone() {
-                    self.start_push_task("push-all".to_string(), cfg.name.clone(), Some(msg));
+                    self.start_push_task(
+                        "push-all".to_string(),
+                        cfg.name.clone(),
+                        Some(msg),
+                        force,
+                    );
                 } else {
                     self.set_status("No workspace loaded".to_string(), true);
                 }
             }
             Some(PushScope::Selected(p)) => {
-                self.start_push_task("push-selected".to_string(), p.name.clone(), Some(msg));
+                self.start_push_task(
+                    "push-selected".to_string(),
+                    p.name.clone(),
+                    Some(msg),
+                    force,
+                );
             }
             None => {
                 self.set_status("No push action pending".to_string(), true);
             }
         }
+    }
+
+    /// Force-push the selected project to origin (with commit prompt if dirty).
+    pub(super) fn request_force_push_selected(&mut self) {
+        if self.task_running {
+            self.set_status("Another task is already running".to_string(), true);
+            return;
+        }
+        let p = match self.selected_project() {
+            Some(p) => p.clone(),
+            None => return,
+        };
+        let path = Path::new(p.local_dir());
+        if !path.exists() {
+            self.set_status(
+                format!("'{}' not found — run pull first", p.local_dir()),
+                true,
+            );
+            return;
+        }
+        if !git::is_repo(path) {
+            self.set_status(
+                format!("'{}' is not a git repo — press i to restore", p.local_dir()),
+                true,
+            );
+            return;
+        }
+        match git::has_uncommitted_changes(path) {
+            Ok(true) => {
+                self.show_commit_prompt = true;
+                self.commit_input.clear();
+                self.pending_push = Some(PushScope::Selected(p));
+                self.pending_push_force = true;
+                self.set_status(
+                    "Enter commit message for force-push (Esc=cancel)".to_string(),
+                    false,
+                );
+            }
+            Ok(false) => {
+                self.start_push_task(
+                    "force-push-selected".to_string(),
+                    p.name.clone(),
+                    None,
+                    true,
+                );
+            }
+            Err(e) => self.set_status(format!("{}: {}", p.name, e), true),
+        }
+    }
+
+    /// Flush: auto-commit all changes with a timestamp and force-push.
+    pub(super) fn flush_selected(&mut self) {
+        if self.task_running {
+            self.set_status("Another task is already running".to_string(), true);
+            return;
+        }
+        let p = match self.selected_project() {
+            Some(p) => p.clone(),
+            None => return,
+        };
+        let path_str = p.local_dir().to_string();
+        let branch = p.branch.clone();
+        let name = p.name.clone();
+
+        self.log_lines.clear();
+        self.tab = Tab::Logs;
+        self.task_running = true;
+        self.task_label = Some("flush".to_string());
+
+        let (tx, rx) = mpsc::channel();
+        self.task_rx = Some(rx);
+        self.set_status("flush started — see Logs tab".to_string(), false);
+
+        thread::spawn(move || {
+            let path = Path::new(&path_str);
+            if !path.exists() {
+                let _ = tx.send(TaskMsg::Log(format!("✘ {}: directory missing", name)));
+                let _ = tx.send(TaskMsg::Done {
+                    ok: false,
+                    msg: "flush failed".to_string(),
+                });
+                return;
+            }
+            let _ = tx.send(TaskMsg::Log(format!("-- flush {} --", name)));
+            match git::flush_repo(path, &branch) {
+                Ok(_) => {
+                    let _ = tx.send(TaskMsg::Log(format!("✔ {} flushed & force-pushed", name)));
+                    let _ = tx.send(TaskMsg::Done {
+                        ok: true,
+                        msg: format!("flush {} complete", name),
+                    });
+                }
+                Err(e) => {
+                    let _ = tx.send(TaskMsg::Log(format!("✘ {}: {}", name, e)));
+                    let _ = tx.send(TaskMsg::Done {
+                        ok: false,
+                        msg: format!("flush {} failed", name),
+                    });
+                }
+            }
+        });
+    }
+
+    /// Restore the git remote for a project whose `.git` was deleted.
+    /// Re-runs `git init` + remote setup + fetch + checkout in the existing dir.
+    pub(super) fn restore_remote_selected(&mut self) {
+        if self.task_running {
+            self.set_status("Another task is already running".to_string(), true);
+            return;
+        }
+        let p = match self.selected_project() {
+            Some(p) => p.clone(),
+            None => return,
+        };
+        let path_str = p.local_dir().to_string();
+        let url = p.url.clone();
+        let branch = p.branch.clone();
+        let name = p.name.clone();
+
+        // Can only restore if directory exists but isn't a git repo yet.
+        let path = Path::new(&path_str);
+        if !path.exists() {
+            // Nothing there — just clone fresh.
+        } else if git::is_repo(path) {
+            self.set_status(
+                format!("'{}' already has a .git — use pull instead", name),
+                true,
+            );
+            return;
+        }
+
+        self.log_lines.clear();
+        self.tab = Tab::Logs;
+        self.task_running = true;
+        self.task_label = Some("restore-remote".to_string());
+
+        let (tx, rx) = mpsc::channel();
+        self.task_rx = Some(rx);
+        self.set_status(
+            format!("Restoring git remote for '{}' — see Logs tab", name),
+            false,
+        );
+
+        thread::spawn(move || {
+            let path = Path::new(&path_str);
+            let _ = tx.send(TaskMsg::Log(format!(
+                "-- restore-remote {} →  {} --",
+                name, url
+            )));
+            let res = if path.exists() {
+                git::init_repo_in_dir(&url, &branch, path)
+            } else {
+                git::clone_repo(&url, path)
+            };
+            match res {
+                Ok(_) => {
+                    let _ = tx.send(TaskMsg::Log(format!("✔ {} remote restored", name)));
+                    let _ = tx.send(TaskMsg::Done {
+                        ok: true,
+                        msg: format!("'{}' remote restored successfully", name),
+                    });
+                }
+                Err(e) => {
+                    let _ = tx.send(TaskMsg::Log(format!("✘ {}: {}", name, e)));
+                    let _ = tx.send(TaskMsg::Done {
+                        ok: false,
+                        msg: format!("restore-remote '{}' failed", name),
+                    });
+                }
+            }
+        });
     }
 
     pub(super) fn create_snapshot(&mut self) {
@@ -740,18 +1001,22 @@ impl App {
     }
 
     pub(super) fn toggle_sync(&mut self) {
+        self.log_lines.clear();
+        self.tab = Tab::Logs;
         if self.sync_running {
-            match sync_mod::stop() {
-                Ok(_) => {
+            match sync_mod::stop_silent() {
+                Ok(msg) => {
                     self.sync_running = false;
+                    self.push_log_line(format!("✔ {}", msg));
                     self.set_status("Sync daemon stopped".to_string(), false);
                 }
                 Err(e) => self.set_status(format!("{}", e), true),
             }
         } else {
-            match sync_mod::start() {
-                Ok(_) => {
+            match sync_mod::start_silent() {
+                Ok(msg) => {
                     self.sync_running = true;
+                    self.push_log_line(format!("✔ {}", msg));
                     self.set_status("Sync daemon started".to_string(), false);
                 }
                 Err(e) => self.set_status(format!("{}", e), true),
@@ -760,8 +1025,15 @@ impl App {
     }
 
     pub(super) fn sync_now(&mut self) {
-        match sync_mod::sync_now() {
-            Ok(_) => self.set_status("Mirror sync complete".to_string(), false),
+        self.log_lines.clear();
+        self.tab = Tab::Logs;
+        match sync_mod::sync_now_silent() {
+            Ok(lines) => {
+                for line in lines {
+                    self.push_log_line(line);
+                }
+                self.set_status("Mirror sync complete".to_string(), false)
+            }
             Err(e) => self.set_status(format!("{}", e), true),
         }
     }
@@ -769,6 +1041,7 @@ impl App {
     pub(super) fn run_doctor(&mut self) {
         self.log_lines.clear();
         use std::process::Command;
+        let mut lines = Vec::<String>::new();
 
         let checks: &[(&str, &[&str], &str)] = &[
             ("git", &["--version"], "git installed"),
@@ -784,9 +1057,9 @@ impl App {
                 .map(|o| o.status.success() || !o.stderr.is_empty())
                 .unwrap_or(false);
             if ok {
-                self.log_lines.push(format!("✔ {}", label));
+                lines.push(format!("✔ {}", label));
             } else {
-                self.log_lines.push(format!("✘ {}", label));
+                lines.push(format!("✘ {}", label));
             }
         }
 
@@ -795,30 +1068,30 @@ impl App {
             Duration::from_secs(3),
         )
         .is_ok();
-        self.log_lines.push(if inet {
+        lines.push(if inet {
             "✔ internet reachable".to_string()
         } else {
             "✘ internet not reachable".to_string()
         });
 
         if let Some(cfg) = &self.config {
-            self.log_lines
-                .push(format!("✔ workspace '{}' loaded", cfg.name));
+            lines.push(format!("✔ workspace '{}' loaded", cfg.name));
             for p in &cfg.projects {
                 let path = Path::new(p.local_dir());
                 if git::is_repo(path) {
-                    self.log_lines.push(format!("✔ repo '{}' present", p.name));
+                    lines.push(format!("✔ repo '{}' present", p.name));
                 } else if path.exists() {
-                    self.log_lines
-                        .push(format!("✘ '{}' exists but not a git repo", p.name));
+                    lines.push(format!("✘ '{}' exists but not a git repo", p.name));
                 } else {
-                    self.log_lines
-                        .push(format!("⚠ repo '{}' not cloned", p.name));
+                    lines.push(format!("⚠ repo '{}' not cloned", p.name));
                 }
             }
         } else {
-            self.log_lines
-                .push("⚠ no workspace config found".to_string());
+            lines.push("⚠ no workspace config found".to_string());
+        }
+
+        for line in lines {
+            self.push_log_line(line);
         }
 
         self.set_status("Doctor complete".to_string(), false);

@@ -90,7 +90,7 @@ pub fn stop_silent() -> Result<String> {
             "Could not signal daemon — it may have already stopped.".to_string()
         };
         let _ = fs::remove_file(PID_FILE);
-        return Ok(msg);
+        Ok(msg)
     }
     #[cfg(windows)]
     {

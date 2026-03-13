@@ -39,20 +39,6 @@ export default function Navbar() {
                     </a>
 
                     <div className="flex items-center gap-2 sm:gap-3">
-                        <a
-                            href="https://github.com/cmdworks/polyws"
-                            target="_blank"
-                            rel="noopener"
-                            className="inline-flex items-center justify-center px-3 sm:px-6 py-2 text-xs sm:text-sm font-body font-medium text-foreground border border-white/20 rounded-full hover:bg-white/5 hover:border-white/40 transition-all"
-                        >
-                            GitHub
-                        </a>
-                        <a
-                            href={sectionHref("install")}
-                            className="inline-flex items-center justify-center px-3 sm:px-6 py-2 text-xs sm:text-sm font-body font-semibold text-white uppercase tracking-wider bg-gradient-primary rounded-full shadow-glow-primary hover:shadow-glow-primary-hover hover:-translate-y-0.5 transition-all"
-                        >
-                            Get Started
-                        </a>
                         <button
                             type="button"
                             className="md:hidden inline-flex items-center justify-center w-10 h-10 border border-white/20 rounded-lg text-foreground hover:bg-white/5"

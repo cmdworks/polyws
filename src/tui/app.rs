@@ -191,8 +191,7 @@ impl App {
     pub(super) fn push_log_line<S: Into<String>>(&mut self, line: S) {
         let raw = line.into();
         let mut clean = Self::strip_ansi(&raw)
-            .replace('\r', " ")
-            .replace('\n', " ")
+            .replace(['\r', '\n'], " ")
             .trim_end()
             .to_string();
 
